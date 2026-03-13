@@ -1,0 +1,321 @@
+F1 PREDICTOR - ISTRUZIONI DI ESECUZIONE
+========================================
+
+## ANALISI DEL PROGETTO
+
+**Struttura del progetto:**
+```
+f1_predictor/
+├── f1_predictor/           # Package principale
+│   ├── models/            # 4 layer ML (TrueSkill, Kalman, Bayesian, Ensemble)
+│   ├── calibration/       # Calibrazione quote (devig, isotonic, edge tracking)
+│   ├── validation/        # Walk‑forward, backtesting, metriche
+│   ├── data/              # Loader per Jolpica, TracingInsights, quote Pinnacle
+│   ├── domain/            # Entità di dominio (Race, Driver, etc.)
+│   ├── pipeline/          # Orchestratore principale (F1PredictionPipeline)
+│   ├── reports/           # Generazione report edge
+│   └── train_pipeline.py  # Script di training CLI
+├── pipeline.py            # Copia della pipeline (duplicato)
+├── F1_Predictor_Documentazione_Tecnica.docx
+└── data/racedata/         # Dataset storico (CSV da TracingInsights)
+```
+
+**Scopo:** Sistema di predizione multistrato per Formula 1 che combina:
+1. **TrueSkill Through Time** – rating piloti condizionato al tipo di circuito
+2. **Filtro di Kalman** – stima del passo macchina per costruttore
+3. **Simulazione Bayesiana** – Monte Carlo per probabilità di vittoria/podio/DNF
+4. **Ensemble Ridge** – correzione meta‑learner
+5. **Calibrazione isotonica** – allineamento alle quote Pinnacle
+6. **Calcolo edge** – identificazione valore scommesse
+
+## PREREQUISITI
+
+- Python 3.8+
+- Sistema operativo: Windows/Linux/macOS
+
+## INSTALLAZIONE DIPENDENZE
+
+```bash
+# Dipendenze base
+pip install scikit-learn scipy numpy pandas requests
+
+# Per MongoDB (opzionale, per salvataggio artefatti)
+pip install pymongo[srv]
+
+# Per dati reali (TracingInsights RaceData)
+git clone https://github.com/TracingInsights/RaceData.git data/racedata
+```
+
+## CONFIGURAZIONE MONGODB (OPZIONALE)
+
+Il progetto supporta il salvataggio degli artefatti di training su MongoDB via GridFS.
+Per abilitare questa funzionalità:
+
+1. Crea un file `.env` nella directory principale del progetto:
+```
+MONGO_URI=mongodb+srv://username:password@cluster.mongodb.net/f1_predictor
+```
+
+2. Assicurati che il database sia accessibile.
+
+**Nota:** Se non configuri MongoDB, usa il flag `--dry-run` durante il training.
+
+## PREPARAZIONE DATI
+
+### Dataset storico
+Il progetto include già il dataset `data/racedata/` (clone del repository TracingInsights RaceData).
+Contiene dati CSV dal 1950 ad oggi.
+
+Per aggiornare i dati:
+```bash
+cd data/racedata
+python download_datasets.py
+```
+
+### Dati sintetici (fallback)
+Se i dataset reali non sono disponibili, il sistema genera automaticamente dati sintetici
+usando `f1_predictor.data.adapter.generate_seasons()`.
+
+## ESECUZIONE DEL TRAINING
+
+Lo script principale per il training è `f1_predictor/train_pipeline.py`.
+
+### Comando base:
+```bash
+python f1_predictor/train_pipeline.py --year 2026 --through-round 5 --train-from 2019
+```
+
+### Parametri principali:
+- `--year` - Anno GP corrente (es. 2026)
+- `--through-round` - Ultimo round incluso nel training (es. 5)
+- `--train-from` - Primo anno del dataset di training (default: 2019)
+- `--val-from` - Primo anno del set di validazione walk‑forward (default: 2022)
+- `--n-mc-sim` - Numero simulazioni Monte Carlo (default: 50000)
+- `--ridge-alpha` - Regolarizzazione Ridge (default: 10.0)
+- `--min-calib-obs` - Osservazioni minime per calibratore isotonic (default: 100)
+
+### Flag utili:
+- `--dry-run` - Esegue training ma non salva su MongoDB
+- `--synthetic` - Forza uso dati sintetici (test/sviluppo)
+- `--list-versions` - Lista versioni modello su MongoDB ed esce
+- `--rollback v20260303_0900` - Rollback a versione specifica
+- `--delete-old 5` - Elimina versioni vecchie, mantieni ultime 5
+
+### Esempi di training:
+```bash
+# Training con dati reali
+python f1_predictor/train_pipeline.py --year 2026 --through-round 5 --train-from 2019
+
+# Training di prova (senza MongoDB)
+python f1_predictor/train_pipeline.py --year 2026 --through-round 3 --synthetic --dry-run
+
+# Lista versioni disponibili
+python f1_predictor/train_pipeline.py --list-versions
+
+# Rollback a versione specifica
+python f1_predictor/train_pipeline.py --rollback v20260303_0900
+```
+
+## UTILIZZO DELLA PIPELINE PER PREDIZIONI
+
+### Esempio di script Python (`predict_example.py`):
+
+```python
+from f1_predictor.pipeline import F1PredictionPipeline
+from f1_predictor.domain.entities import Race, Circuit, CircuitType
+
+# 1. Carica dati storici (esempio con dati sintetici)
+from f1_predictor.data.adapter import generate_seasons
+races = generate_seasons(years=[2024, 2025], through_round=5)
+
+# 2. Addestra pipeline
+pipeline = F1PredictionPipeline()
+pipeline.fit(races, verbose=True)
+
+# 3. Prepara input per una gara futura
+race = Race(
+    race_id=2026006,
+    name="GP Australia",
+    circuit=Circuit(
+        circuit_ref="albert_park",
+        circuit_type=CircuitType.STREET,
+        country="Australia"
+    ),
+    year=2026,
+    round_num=6,
+    date="2026-03-23"
+)
+
+driver_grid = [
+    {"driver_code": "VER", "constructor_ref": "red_bull", "grid_position": 1},
+    {"driver_code": "LEC", "constructor_ref": "ferrari", "grid_position": 2},
+    # ... aggiungi altri piloti
+]
+
+pinnacle_odds = {"VER": 1.85, "LEC": 3.50, "NOR": 5.00, "RUS": 8.00}
+
+# 4. Esegui predizione
+result = pipeline.predict_race(race, driver_grid, pinnacle_odds, verbose=True)
+
+# 5. Analizza risultati
+print("=== PROBABILITÀ CALCOLATE ===")
+for driver_code, prob in result["probabilities"].items():
+    print(f"{driver_code}: P(win)={prob.p_win:.3f}, P(podium)={prob.p_podium:.3f}")
+
+if result["edge_report"]:
+    print("\n=== EDGE REPORT ===")
+    print(f"Selezioni con edge > 4%: {len(result['edge_report']['positive_edge'])}")
+    for sel in result["edge_report"]["positive_edge"]:
+        print(f"  {sel['driver']}: quota={sel['odds']:.2f}, edge={sel['edge']:.2%}")
+```
+
+### Utilizzo dei singoli layer:
+```python
+# Solo Layer 1a: TrueSkill Through Time
+from f1_predictor.models.driver_skill import DriverSkillModel, TTTConfig
+skill_model = DriverSkillModel(config=TTTConfig())
+# ... carica risultati storici
+# skill_model.fit(race_results)
+
+# Solo Layer 1b: Machine Pace (Kalman Filter)
+from f1_predictor.models.machine_pace import MachinePaceModel, KalmanConfig
+pace_model = MachinePaceModel(config=KalmanConfig())
+# ... aggiorna con osservazioni di passo
+
+# Solo Layer 2: Bayesian Race Simulation
+from f1_predictor.models.bayesian_race import BayesianRaceModel, RaceSimConfig
+race_sim = BayesianRaceModel(config=RaceSimConfig(n_simulations=100000))
+# ... esegui simulazioni Monte Carlo
+
+# Solo Layer 4: Calibration
+from f1_predictor.calibration.isotonic import PinnacleCalibrationLayer
+calibrator = PinnacleCalibrationLayer(min_samples=100)
+# ... addestra su probabilità raw e outcomes
+```
+
+## VALIDAZIONE E BACKTESTING
+
+### Walk‑forward validation:
+```python
+from f1_predictor.validation.walk_forward import WalkForwardValidator
+
+validator = WalkForwardValidator()
+metrics = validator.evaluate(
+    races,                    # lista di gare storiche
+    train_from=2020,          # primo anno training
+    val_from=2023,            # primo anno validazione
+    n_mc_sim=50000,
+    ridge_alpha=10.0
+)
+
+print(f"Brier Score: {metrics['brier']:.4f}")
+print(f"Kendall tau: {metrics['kendall_tau']:.3f}")
+print(f"ROI simulato: {metrics['roi']:.1f}%")
+print(f"ECE: {metrics['ece']:.4f}")
+```
+
+### Backtesting:
+```python
+from f1_predictor.validation.backtesting import BettingBacktester, BacktestConfig
+
+config = BacktestConfig(
+    kelly_fraction=0.25,
+    edge_threshold=0.04,
+    bankroll=1000.0
+)
+backtester = BettingBacktester(config=config)
+
+# Simula scommesse storiche
+backtest_results = backtester.run(
+    historical_predictions,   # predizioni passate
+    historical_odds,          # quote storiche
+    historical_outcomes       # risultati reali
+)
+
+print(f"ROI finale: {backtest_results['final_roi']:.1f}%")
+print(f"Sharpe ratio: {backtest_results['sharpe_ratio']:.2f}")
+```
+
+## RISOLUZIONE PROBLEMI
+
+### 1. `ModuleNotFoundError: No module named 'core.db'`
+**Problema:** Il modulo `core.db` non è presente nel progetto.
+**Soluzione:** Usa `--dry-run` per evitare la scrittura su MongoDB, oppure crea un file `core/db.py` con una connessione fittizia.
+
+### 2. Dati storici insufficienti
+**Problema:** I dataset reali non sono disponibili o incompleti.
+**Soluzione:** Il loader passa automaticamente a dati sintetici. Puoi forzare l'uso di dati sintetici con `--synthetic`.
+
+### 3. MongoDB non configurato
+**Problema:** Errore di connessione a MongoDB.
+**Soluzione:** 
+- Usa `--dry-run` per training senza salvataggio
+- Configura correttamente `MONGO_URI` nel file `.env`
+- Verifica che il cluster MongoDB sia accessibile
+
+### 4. Quote Pinnacle mancanti
+**Problema:** La calibrazione isotonica (Layer 4) richiede almeno 100 osservazioni.
+**Soluzione:** 
+- Aggiungi dati di quote reali in `data/pinnacle_odds/` (formato JSONL)
+- Usa il modello senza calibrazione (funziona comunque)
+- Il calibratore si attiverà automaticamente quando avrà abbastanza dati
+
+### 5. Training lento
+**Problema:** Le simulazioni Monte Carlo (50k+ default) possono essere pesanti.
+**Soluzione:** 
+- Riduci `--n-mc-sim` a 10000-20000 per testing
+- Usa `--synthetic` per dati più leggeri
+- Durante walk‑forward validation, il numero di simulazioni viene automaticamente ridotto
+
+## METRICHE DI PERFORMANCE ATTESE
+
+Dal walk‑forward validation, obiettivi ragionevoli:
+- **Brier Score**: < 0.20 (minore è meglio)
+- **Kendall tau**: > 0.45 (correlazione ranking predetto/reale)
+- **ROI simulato**: > 0% (profitto atteso)
+- **ECE (Expected Calibration Error)**: < 0.05 (calibrazione accurata)
+
+## FILE CHIAVE DEL PROGETTO
+
+1. `f1_predictor/pipeline/prediction_pipeline.py` - Classe principale `F1PredictionPipeline`
+2. `f1_predictor/train_pipeline.py` - Script CLI per training
+3. `f1_predictor/data/adapter.py` - Generazione dati sintetici e adattamento formati
+4. `f1_predictor/domain/entities.py` - Definizioni delle entità di dominio
+5. `F1_Predictor_Documentazione_Tecnica.docx` - Documentazione tecnica completa
+
+## CICLO DI VITA TIPICO
+
+1. **Pre‑gara:**
+   ```bash
+   python f1_predictor/train_pipeline.py --year 2026 --through-round 5
+   ```
+2. **Predizione:**
+   ```python
+   result = pipeline.predict_race(race, driver_grid, pinnacle_odds)
+   ```
+3. **Post‑gara (aggiornamento):**
+   ```python
+   pipeline.update_with_race_result(race_id, actual_results, odds_used)
+   ```
+4. **Validazione periodica:**
+   ```bash
+   python f1_predictor/train_pipeline.py --year 2026 --through-round 5 --dry-run
+   ```
+
+## NOTE IMPORTANTI
+
+- Il sistema è progettato per **analisi statistica**, non per garantire vincite
+- Le prestazioni dipendono fortemente dalla qualità dei dati di input
+- Monitora sempre le metriche ex‑post nella validazione walk‑forward
+- Aggiorna regolarmente i dataset storici per mantenere l'accuratezza
+- La calibrazione isotonica migliora con l'accumulo di dati reali di quote
+
+## CONTATTI E SUPPORTO
+
+Per problemi tecnici o domande sul funzionamento:
+- Consulta la documentazione tecnica (`F1_Predictor_Documentazione_Tecnica.docx`)
+- Verifica la struttura del progetto e le dipendenze
+- Utilizza il flag `--dry-run` per testing senza effetti collaterali
+
+---
+*Ultimo aggiornamento: 10 marzo 2026*
