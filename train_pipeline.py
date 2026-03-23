@@ -113,6 +113,8 @@ def connect_db():
 def run_training(args) -> dict:
     """Esegue training completo di tutti e 4 i layer."""
 
+    import time as _time
+
     # ── Importa il package f1_predictor ──────────────────────────────
     try:
         from f1_predictor.pipeline import F1PredictionPipeline
@@ -127,8 +129,58 @@ def run_training(args) -> dict:
         )
         sys.exit(1)
 
+    # ── ETA stimati per ogni step ─────────────────────────────────────
+    # Calibrati su: 147 gare, n_mc=5000, val_from=2022
+    # Scalano con n_mc_sim e numero di stagioni
+    _mc_scale   = args.n_mc_sim / 5_000
+    _yr_scale   = max(1, (args.year - args.train_from + 1)) / 7
+    _val_years  = max(1, args.year - args.val_from + 1)
+
+    _ETA_SEC = {
+        1: 3,                                            # caricamento dati (cache locale)
+        2: 1,                                            # init pipeline (solo oggetti)
+        3: max(30, int(90 * _mc_scale * _val_years)),   # walk-forward: il passo lento
+        4: max(10, int(20 * _mc_scale * _yr_scale)),    # fit finale
+        5: 2,                                            # Ridge: istantaneo
+        6: 5,                                            # isotonic calibrator
+        7: 2,                                            # serializzazione artefatti
+    }
+
+    def _fmt_eta(secs: int) -> str:
+        if secs < 60:
+            return f"~{secs}s"
+        return f"~{secs // 60}m{secs % 60:02d}s"
+
+    def _fmt_elapsed(secs: float) -> str:
+        if secs < 60:
+            return f"{secs:.1f}s"
+        return f"{secs / 60:.1f}m"
+
+    _t_global = _time.time()
+    _step_timers: dict = {}
+
+    def _step_start(n: int, desc: str) -> None:
+        elapsed_total = _time.time() - _t_global
+        eta_str       = _fmt_eta(_ETA_SEC.get(n, 0))
+        total_str     = _fmt_elapsed(elapsed_total)
+        bar           = "█" * n + "░" * (7 - n)
+        log.info(
+            f"┌─[{n}/7] {bar}  {desc}\n"
+            f"│  ETA questo step: {eta_str}  |  Trascorso totale: {total_str}"
+        )
+        _step_timers[n] = _time.time()
+
+    def _step_done(n: int, extra: str = "") -> None:
+        dur = _time.time() - _step_timers.get(n, _time.time())
+        eta = _ETA_SEC.get(n, 0)
+        diff = dur - eta
+        diff_str = (f"  [{'+' if diff >= 0 else ''}{diff:.0f}s vs ETA]"
+                    if abs(diff) > 3 else "")
+        suffix = f"  {extra}" if extra else ""
+        log.info(f"└─ ✓ completato in {_fmt_elapsed(dur)}{diff_str}{suffix}")
+
     # ── 1. Carica dati ───────────────────────────────────────────────
-    log.info(f"[1/7] Caricando dati {args.train_from}–{args.year} R{args.through_round}...")
+    _step_start(1, f"Caricamento dati  {args.train_from}–{args.year}  R{args.through_round}")
     try:
         from f1_predictor.data import load_training_data
         races = load_training_data(
@@ -151,22 +203,27 @@ def run_training(args) -> dict:
         log.error("Nessun dato caricato. Impossibile procedere.")
         sys.exit(1)
 
-    log.info(f"    → {len(races)} gare caricate ({args.train_from}–{args.year})")
+    _step_done(1, f"{len(races)} gare  ({args.train_from}–{args.year})")
 
     # ── 2. Costruisci pipeline ────────────────────────────────────────
-    log.info("[2/7] Inizializzando F1PredictionPipeline...")
+    _step_start(2, "Inizializzazione F1PredictionPipeline (4 layer)")
     pipeline = F1PredictionPipeline(
         ttt_config=TTTConfig(),
         kalman_config=KalmanConfig(),
         sim_config=RaceSimConfig(n_simulations=args.n_mc_sim),
         min_edge=0.04,
     )
+    _step_done(2, f"MC={args.n_mc_sim:,} sim")
 
     # ── 3. Walk-forward validation ────────────────────────────────────
-    # Separa train/val prima di fittare il modello finale
-    log.info(f"[3/7] Walk-forward validation (train:{args.train_from}–{args.val_from-1}"
-             f" | val:{args.val_from}–{args.year})...")
-
+    n_val_races = len([r for r in races if r.get("year", 0) >= args.val_from])
+    _step_start(
+        3,
+        f"Walk-forward validation  "
+        f"train:{args.train_from}–{args.val_from - 1}  "
+        f"val:{args.val_from}–{args.year}  "
+        f"({n_val_races} gare di test)"
+    )
     val_metrics = _run_walkforward(
         pipeline=pipeline,
         races=races,
@@ -176,39 +233,58 @@ def run_training(args) -> dict:
         n_mc_sim=args.n_mc_sim,
         ridge_alpha=args.ridge_alpha,
     )
+    n_eval = val_metrics.get("n_races_evaluated", 0)
+    _step_done(3, f"{n_eval} gare valutate")
     _log_metrics(val_metrics)
 
     # ── 4. Fit finale su TUTTI i dati ────────────────────────────────
-    log.info(f"[4/7] Fitting finale su tutti i {len(races)} gare...")
+    _step_start(4, f"Fit finale su tutti i {len(races)} gare  (TTT + Kalman)")
     pipeline_final = F1PredictionPipeline(
         ttt_config=TTTConfig(),
         kalman_config=KalmanConfig(),
         sim_config=RaceSimConfig(n_simulations=args.n_mc_sim),
     )
     pipeline_final.fit(races, verbose=False)
-    log.info("    ✓ Pipeline fittata")
+    _step_done(4)
 
-    # ── 5. Ridge su tutto + calibratore ──────────────────────────────
-    log.info(f"[5/7] Fit Ridge ensemble (alpha={args.ridge_alpha})...")
+    # ── 5. Ridge ensemble ────────────────────────────────────────────
+    _step_start(5, f"Fit Ridge ensemble  (alpha={args.ridge_alpha})")
     pipeline_final.ensemble.alpha = args.ridge_alpha
     ridge_info = _extract_ridge_info(pipeline_final)
+    _step_done(5)
 
-    # Calibratore Isotonic
+    # ── 6. Isotonic Calibrator ───────────────────────────────────────
     calibrator_info = None
-    odds_records = _load_odds(args.odds_dir)
-    if odds_records and len(odds_records) >= args.min_calib_obs:
-        log.info(f"[6/7] Fit Isotonic Calibrator ({len(odds_records)} obs)...")
-        calibrator_info = _fit_calibrator(pipeline_final, odds_records)
-    else:
-        n_obs = len(odds_records) if odds_records else 0
-        log.info(
-            f"[6/7] Calibratore SKIPPED: {n_obs} < {args.min_calib_obs} obs Pinnacle.\n"
-            "       Aggiungi dati in data/pinnacle_odds/ per attivare Layer 4."
-        )
+    odds_records    = _load_odds(args.odds_dir)
+    n_obs           = len(odds_records) if odds_records else 0
 
-    # ── 6. Estrai artefatti ──────────────────────────────────────────
-    log.info("[7/7] Serializzando artefatti...")
+    if odds_records and n_obs >= args.min_calib_obs:
+        _step_start(6, f"Fit Isotonic Calibrator  ({n_obs} osservazioni Pinnacle)")
+        calibrator_info = _fit_calibrator(pipeline_final, odds_records)
+        _step_done(6, "Layer 4 attivo")
+    else:
+        needed = args.min_calib_obs - n_obs
+        _step_start(6, f"Isotonic Calibrator  [{n_obs}/{args.min_calib_obs} obs]")
+        log.info(
+            f"│  ⚠ SKIPPED — mancano {needed} osservazioni Pinnacle.\n"
+            f"│    Esegui: python scripts/collect_odds.py  prima di ogni GP\n"
+            f"│    Layer 4 si attiverà automaticamente al raggiungimento di "
+            f"{args.min_calib_obs} obs."
+        )
+        _step_done(6, "skipped")
+
+    # ── 7. Serializza artefatti ──────────────────────────────────────
+    _step_start(7, "Serializzazione artefatti → MongoDB")
     artifacts = _extract_artifacts(pipeline_final, ridge_info, calibrator_info)
+    _step_done(7)
+
+    # ── Riepilogo tempi ──────────────────────────────────────────────
+    _total = _time.time() - _t_global
+    log.info(
+        f"\n  ⏱  Tempo totale: {_fmt_elapsed(_total)}"
+        f"  |  Gare: {len(races)}"
+        f"  |  MC sim: {args.n_mc_sim:,}"
+    )
 
     # Metadata
     metadata = {
@@ -220,16 +296,17 @@ def run_training(args) -> dict:
         "kendall_tau":           round(val_metrics.get("kendall_tau", 0.0), 6),
         "walk_forward_roi":      round(val_metrics.get("roi", 0.0), 4),
         "walk_forward_ece":      round(val_metrics.get("ece", 1.0), 6),
-        "n_calibration_samples": len(odds_records) if odds_records else 0,
+        "n_calibration_samples": n_obs,
         "calibrator_fitted":     calibrator_info is not None,
         "ridge_alpha":           args.ridge_alpha,
         "n_mc_sim":              args.n_mc_sim,
         "data_sources":          _get_data_sources(args),
+        "training_time_sec":     round(_total, 1),
     }
 
     return {
-        "artifacts":  artifacts,
-        "metadata":   metadata,
+        "artifacts":   artifacts,
+        "metadata":    metadata,
         "val_metrics": val_metrics,
     }
 
@@ -713,30 +790,67 @@ def _log_metrics(m: dict):
     k  = m.get("kendall_tau", 0.0)
     r  = m.get("roi", 0.0)
     e  = m.get("ece", 1.0)
-    log.info(f"    Brier Score:  {b:.4f}  {'OK' if b < 0.20 else 'WARN '} (target < 0.20)")
-    log.info(f"    Kendall tau:  {k:.3f}  {'OK' if k > 0.45 else 'WARN '} (target > 0.45)")
-    log.info(f"    ROI (WF):     {r:+.1f}%  {'OK' if r > 0 else 'WARN '} (target > 0%)")
-    log.info(f"    ECE:          {e:.4f}  {'OK' if e < 0.05 else 'WARN '} (target < 0.05)")
+    n  = m.get("n_races_evaluated", "?")
+
+    def _bar(val, target, higher_is_better=True, width=10) -> str:
+        """Mini barra di progresso verso il target."""
+        if isinstance(val, float) and isinstance(target, float) and target != 0:
+            ratio = (val / target) if higher_is_better else (target / val)
+            filled = min(int(ratio * width), width)
+            return "▓" * filled + "░" * (width - filled)
+        return "░" * width
+
+    log.info("  ┌─────────────────────────────────────────────────")
+    log.info(f"  │  Metriche walk-forward  ({n} gare valutate)")
+    log.info("  ├─────────────────────────────────────────────────")
+    log.info(
+        f"  │  Kendall τ   {k:+.3f}  {_bar(k, 0.45, True)}  "
+        f"{'✅ OK' if k >= 0.45 else '⚠ WARN'}  (target ≥ 0.45)"
+    )
+    log.info(
+        f"  │  Brier Score {b:.4f}  {_bar(b, 0.20, False)}  "
+        f"{'✅ OK' if b <= 0.20 else '⚠ WARN'}  (target ≤ 0.20)"
+    )
+    log.info(
+        f"  │  ROI (WF)    {r:+.1f}%  {_bar(r, 5.0, True)}  "
+        f"{'✅ OK' if r > 0 else '⚠ WARN'}  (target > 0%)"
+    )
+    log.info(
+        f"  │  ECE         {e:.4f}  {_bar(e, 0.05, False)}  "
+        f"{'✅ OK' if e <= 0.05 else '⚠ WARN'}  (target ≤ 0.05)"
+    )
+    log.info("  └─────────────────────────────────────────────────")
 
 
 def print_summary(result: dict):
     meta = result["metadata"]
     m    = result["val_metrics"]
+    t    = meta.get("training_time_sec", 0)
+    t_str = f"{t:.0f}s" if t < 60 else f"{t/60:.1f}m"
+
     print()
-    print("=" * 62)
+    print("=" * 64)
     print("  F1 PREDICTOR v2 — TRAINING SUMMARY")
-    print("=" * 62)
-    print(f"  Anno/Round:    {meta['train_through_year']} R{meta['train_through_round']}")
-    print(f"  Gare usate:    {meta['n_races_train']}")
-    print(f"  Fonti dati:    {', '.join(meta['data_sources'])}")
-    print(f"  Brier Score:   {meta['walk_forward_brier']:.4f}  "
-          f"{'OK' if meta['walk_forward_brier'] < 0.20 else 'WARN '}")
-    print(f"  Kendall tau:   {meta['kendall_tau']:.3f}  "
-          f"{'OK' if meta['kendall_tau'] > 0.45 else 'WARN '}")
-    print(f"  ROI (WF):      {meta['walk_forward_roi']:+.1f}%  "
-          f"{'OK' if meta['walk_forward_roi'] > 0 else 'WARN '}")
-    print(f"  ECE:           {meta['walk_forward_ece']:.4f}  "
-          f"{'OK' if meta['walk_forward_ece'] < 0.05 else 'WARN '}")
+    print("=" * 64)
+    print(f"  Anno/Round :   {meta['train_through_year']} R{meta['train_through_round']}")
+    print(f"  Gare usate :   {meta['n_races_train']}")
+    print(f"  Fonti dati :   {', '.join(meta['data_sources'])}")
+    print(f"  Tempo totale:  {t_str}")
+    print(f"  MC sim/gara:   {meta['n_mc_sim']:,}")
+    print()
+    print("  ┌─ METRICHE WALK-FORWARD ─────────────────────────")
+
+    def _row(label, val, fmt, target_ok: bool, target_str: str):
+        icon = "✅" if target_ok else "⚠ "
+        print(f"  │  {label:<14} {val:{fmt}}   {icon}  {target_str}")
+
+    _row("Kendall τ",    meta['kendall_tau'],        "+.3f", meta['kendall_tau'] >= 0.45,  "target ≥ 0.45")
+    _row("Brier Score",  meta['walk_forward_brier'], ".4f",  meta['walk_forward_brier'] <= 0.20, "target ≤ 0.20")
+    _row("ROI (WF)",     meta['walk_forward_roi'],   "+.1f", meta['walk_forward_roi'] > 0,  "target > 0%")
+    _row("ECE",          meta['walk_forward_ece'],   ".4f",  meta['walk_forward_ece'] <= 0.05, "target ≤ 0.05")
+    print(f"  │  Calibratore  {'✅ attivo' if meta['calibrator_fitted'] else '⚠  inattivo  (< 100 obs Pinnacle)'}")
+    print("  └──────────────────────────────────────────────────")
+    print()
 
 
 
