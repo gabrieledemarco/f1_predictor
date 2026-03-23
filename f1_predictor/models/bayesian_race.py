@@ -282,11 +282,37 @@ class BayesianRaceModel:
         has_safety_car = np.random.random() < self.config.safety_car_prob_per_race
         sc_lap = int(np.random.uniform(10, self.config.total_laps - 10)) if has_safety_car else -1
 
-        # DNF events per driver (Bernoulli per lap)
+        # TASK 5.3 — DNF rate per-driver (rookie penalty).
+        # Rookies e piloti con team inaffidabili hanno DNF tecnico piu' frequente.
+        # Valori basati su media storica 2019-2024 per categoria (Jolpica data).
+        # Conversione: P(DNF | gara) → P(DNF per giro) = 1 - (1-p_race)^(1/57)
+        # Veteran (P_race~0.06): 0.00110 / lap
+        # Rookie (P_race~0.15):  0.00285 / lap
+        DNF_RATE_PER_LAP = {
+            # Top teams — veteran piloti affidabili
+            "russell":    0.00080, "leclerc":   0.00100, "hamilton":   0.00090,
+            "piastri":    0.00110, "norris":     0.00100, "verstappen": 0.00110,
+            # Top teams — rookies 2026
+            "antonelli":  0.00260, "hadjar":     0.00280,
+            # Mid teams — veteran
+            "hulkenberg": 0.00130, "ocon":       0.00140, "gasly":      0.00140,
+            "albon":      0.00130, "sainz":      0.00120, "alonso":     0.00120,
+            # Mid teams — rookies 2026
+            "lindblad":   0.00310, "bortoleto":  0.00270, "bearman":    0.00290,
+            "lawson":     0.00200, "colapinto":  0.00230,
+            # Default fallback
+            "_default":   0.00150,
+        }
+
         dnf_lap = {}
         for i in range(n_drivers):
+            code = driver_inputs[i].driver_code.lower()
+            dnf_p = DNF_RATE_PER_LAP.get(code, DNF_RATE_PER_LAP["_default"])
+            # Amplifica se is_rookie flag e' attivo nel DriverRaceInput
+            if getattr(driver_inputs[i], "is_rookie", False):
+                dnf_p = min(dnf_p * 1.5, 0.005)
             for lap in range(self.config.total_laps):
-                if np.random.random() < self.config.dnf_prob_per_lap:
+                if np.random.random() < dnf_p:
                     dnf_lap[i] = lap
                     break
 

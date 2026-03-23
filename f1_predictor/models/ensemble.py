@@ -64,6 +64,20 @@ class EnsembleFeatures:
     circuit_type_encoded: int           # 0-4 (CircuitType ordinal)
     has_grid_penalty: bool
 
+    # TASK 5.1 — Nuove feature storiche ad alto impatto predittivo
+    h2h_win_rate_3season: float = 0.5
+    """Win rate H2H del pilota vs il resto del campo nelle ultime 3 stagioni.
+    Cattura la performance storica relativa indipendentemente dalla macchina.
+    Range [0,1]. 0.5 = neutro (default per nuovi piloti senza storico)."""
+
+    elo_delta_vs_field: float = 0.0
+    """Delta ELO rolling (finestra 20 gare) del pilota rispetto alla media del
+    campo. Positivo = pilota sopra la media. Scala ~[-200, +200]."""
+
+    dnf_rate_relative: float = 0.0
+    """Tasso DNF relativo del pilota vs media campo (rolling 2 stagioni).
+    Positivo = pilota piu' affidabile della media. Range [-0.1, +0.1]."""
+
     # Market signal (informative feature, not target)
     p_pinnacle_novig: Optional[float] = None
     log_odds_pinnacle: Optional[float] = None
@@ -84,6 +98,10 @@ class EnsembleFeatures:
             self.grid_vs_quali_delta,
             float(self.circuit_type_encoded),
             float(self.has_grid_penalty),
+            # TASK 5.1 — nuove feature storiche
+            float(self.h2h_win_rate_3season),
+            float(self.elo_delta_vs_field),
+            float(self.dnf_rate_relative),
         ]
         if include_market and self.p_pinnacle_novig is not None:
             base += [
@@ -99,6 +117,8 @@ class EnsembleFeatures:
             "pace_mu", "pace_sigma",
             "p_win_mc", "p_podium_mc", "p_dnf_mc", "exp_pos_mc",
             "grid_pos", "grid_quali_delta", "circuit_type", "has_penalty",
+            # TASK 5.1
+            "h2h_win_rate_3season", "elo_delta_vs_field", "dnf_rate_relative",
         ]
         if include_market:
             base += ["p_pinnacle_novig", "log_odds_pinnacle"]

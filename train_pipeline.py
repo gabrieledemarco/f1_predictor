@@ -268,93 +268,229 @@ def _run_walkforward(pipeline, races: list[dict],
     wf_pipeline = F1PredictionPipeline(
         ttt_config=TTTConfig(),
         kalman_config=KalmanConfig(),
-        sim_config=RaceSimConfig(n_simulations=min(n_mc_sim, 10_000)),  # più veloce in WF
+        # FIX: use reduced MC count for speed in WF loop, full count only for final training
+        sim_config=RaceSimConfig(n_simulations=min(n_mc_sim, 5_000)),
     )
     wf_pipeline.fit(train_races, verbose=False)
 
-    all_p_win   = []
-    all_outcome = []
-    rank_predicted = []
-    rank_actual    = []
+    # Accumulators for ROI (flat-stake across all races)
+    all_p_win_roi   = []
+    all_outcome_roi = []
+
+    # Per-race metric accumulators (FIX: avoid cross-race rank conflation)
+    race_taus       = []
+    race_briers     = []
+
+    import gc
 
     for race in test_races:
         results = race.get("results", [])
         if not results:
             continue
 
-        # Predici probabilità win per ogni pilota
         circuit_type_str = race.get("circuit_type", "mixed")
         try:
             ctype = CircuitType(circuit_type_str)
         except ValueError:
             ctype = CircuitType.MIXED
 
+        # ----------------------------------------------------------------
+        # TASK 2.1/2.2: Try full pipeline predict_race(), fall back to TTT only
+        # ----------------------------------------------------------------
         driver_probs = {}
-        for res in results:
-            code = res["driver_code"]
-            skill = wf_pipeline.driver_skill.get_rating(code, ctype)
-            driver_probs[code] = skill.mu
+        try:
+            race_entity, driver_grid = _build_race_entity_from_dict(race)
+            pred_result = wf_pipeline.predict_race(race_entity, driver_grid, verbose=False)
+            driver_probs = {
+                code: prob.p_win
+                for code, prob in pred_result["probabilities"].items()
+            }
+            log.debug(f"  [WF] Race {race.get('race_id')}: full pipeline OK")
+        except Exception as e:
+            log.debug(f"  [WF] Race {race.get('race_id')}: full pipeline failed ({e}), fallback to TTT softmax")
+            # Fallback: TTT mu softmax (original behaviour)
+            raw_mu = {}
+            for res in results:
+                code = res["driver_code"]
+                try:
+                    skill = wf_pipeline.driver_skill.get_rating(code, ctype)
+                    raw_mu[code] = skill.mu
+                except Exception:
+                    raw_mu[code] = wf_pipeline.driver_skill.config.mu_0
 
-        # Normalizza via softmax approssimativo come proxy per P(win)
-        if driver_probs:
-            mu_vals = np.array(list(driver_probs.values()))
-            mu_max  = mu_vals.max()
-            exp_v   = np.exp(mu_vals - mu_max)
-            probs   = exp_v / exp_v.sum()
+            if raw_mu:
+                mu_vals = np.array(list(raw_mu.values()))
+                mu_max  = mu_vals.max()
+                exp_v   = np.exp(mu_vals - mu_max)
+                softmax = exp_v / exp_v.sum()
+                driver_probs = dict(zip(raw_mu.keys(), softmax.tolist()))
 
-            for code, p in zip(driver_probs.keys(), probs):
-                res_entry = next((r for r in results if r["driver_code"] == code), None)
-                if res_entry:
-                    won = 1 if res_entry.get("finish_position") == 1 else 0
-                    all_p_win.append(float(p))
-                    all_outcome.append(won)
+        if not driver_probs:
+            wf_pipeline.fit([race], verbose=False)
+            gc.collect()
+            continue
 
-        # Ranking
-        predicted_order = sorted(driver_probs.items(), key=lambda x: -x[1])
-        actual_order    = sorted(
-            [r for r in results if r.get("finish_position")],
-            key=lambda r: r["finish_position"]
+        # ----------------------------------------------------------------
+        # TASK 1.1: Kendall τ — per-race only (FIX: no cross-race accumulation)
+        # ----------------------------------------------------------------
+        predicted_order = [d for d, _ in sorted(driver_probs.items(), key=lambda x: -x[1])]
+        actual_order = [
+            r["driver_code"]
+            for r in sorted(
+                [r for r in results if r.get("finish_position") is not None],
+                key=lambda r: r["finish_position"]
+            )
+        ]
+        common = [d for d in predicted_order if d in actual_order]
+        if len(common) >= 5:
+            pred_ranks = [predicted_order.index(d) for d in common]
+            act_ranks  = [actual_order.index(d)    for d in common]
+            tau_val, _ = kendalltau(pred_ranks, act_ranks)
+            if not np.isnan(tau_val):
+                race_taus.append(float(tau_val))
+
+        # ----------------------------------------------------------------
+        # TASK 1.2: Brier Score — per-race on the actual winner (FIX)
+        # Models that assign high p_win to the actual winner score well.
+        # ----------------------------------------------------------------
+        winner = next(
+            (r["driver_code"] for r in results if r.get("finish_position") == 1),
+            None
         )
-        rank_predicted.extend([d for d, _ in predicted_order])
-        rank_actual.extend([r["driver_code"] for r in actual_order])
+        if winner is not None and winner in driver_probs:
+            p_winner = driver_probs[winner]
+            race_briers.append((p_winner - 1.0) ** 2)
 
-        # Aggiorna pipeline WF con questa gara (expanding window)
+        # Accumulate for ROI simulation (all driver-race combos)
+        for res in results:
+            code = res.get("driver_code")
+            if code and code in driver_probs:
+                won = 1 if res.get("finish_position") == 1 else 0
+                all_p_win_roi.append(driver_probs[code])
+                all_outcome_roi.append(won)
+
+        # Expanding window update — GC after each race to prevent memory growth
         wf_pipeline.fit([race], verbose=False)
+        gc.collect()
 
-    # Calcola metriche
+    # ----------------------------------------------------------------
+    # Aggregate metrics
+    # ----------------------------------------------------------------
     metrics = {}
 
-    # Brier Score
-    if all_p_win:
-        brier = float(np.mean([(p - o)**2 for p, o in zip(all_p_win, all_outcome)]))
-        metrics["brier"] = brier
-    else:
-        metrics["brier"] = 0.25
+    # TASK 1.1 — Kendall τ: mean over per-race values
+    metrics["kendall_tau"] = float(np.mean(race_taus)) if race_taus else 0.0
+    metrics["n_races_evaluated"] = len(race_taus)
 
-    # Kendall tau
-    if rank_predicted and rank_actual:
-        # Assegna rank numerico
-        drivers_set = list(dict.fromkeys(rank_actual))
-        rank_map    = {d: i for i, d in enumerate(drivers_set)}
-        pred_ranks  = [rank_map.get(d, len(drivers_set)) for d in rank_predicted
-                       if d in rank_map]
-        act_ranks   = list(range(len(pred_ranks)))
-        if len(pred_ranks) > 1:
-            tau, _ = kendalltau(pred_ranks, act_ranks)
-            metrics["kendall_tau"] = float(tau)
-        else:
-            metrics["kendall_tau"] = 0.0
-    else:
-        metrics["kendall_tau"] = 0.0
+    # TASK 1.2 — Brier: mean of per-race winner Brier values
+    metrics["brier"] = float(np.mean(race_briers)) if race_briers else 0.25
 
-    # ROI simulato (Kelly 0.25x su edge > 4%)
-    metrics["roi"] = _simulate_roi(all_p_win, all_outcome)
+    # ROI simulato (unchanged — still uses flat-stake Kelly)
+    metrics["roi"] = _simulate_roi(all_p_win_roi, all_outcome_roi)
 
-    # ECE (Expected Calibration Error)
-    metrics["ece"] = _compute_ece(all_p_win, all_outcome)
+    # TASK 1.3 — ECE: uses quantile bins (see _compute_ece fix)
+    metrics["ece"] = _compute_ece(all_p_win_roi, all_outcome_roi)
+
+    log.info(
+        f"  [WF] {len(race_taus)} gare valutate | "
+        f"τ={metrics['kendall_tau']:.3f} | "
+        f"Brier={metrics['brier']:.4f} | "
+        f"ROI={metrics['roi']:+.1f}% | "
+        f"ECE={metrics['ece']:.4f}"
+    )
 
     return metrics
 
+
+
+
+def _build_race_entity_from_dict(race_dict: dict):
+    """
+    TASK 2.1 — Converte un race dict storico in (Race, driver_grid)
+    per utilizzo con wf_pipeline.predict_race() nel walk-forward.
+    Permette di usare il pipeline a 4 layer completo invece del solo TTT-softmax.
+    """
+    from f1_predictor.domain.entities import Race, Circuit, CircuitType
+
+    circuit_type_str = race_dict.get("circuit_type", "mixed")
+    try:
+        ctype = CircuitType(circuit_type_str)
+    except ValueError:
+        ctype = CircuitType.MIXED
+
+    circuit = Circuit(
+        circuit_id=race_dict.get("circuit_id", 0),
+        ref=race_dict.get("circuit_ref", "unknown"),
+        name=race_dict.get("circuit_name", "unknown"),
+        location=race_dict.get("country", ""),
+        country=race_dict.get("country", ""),
+        circuit_type=ctype,
+    )
+    race = Race(
+        race_id=race_dict.get("race_id", 0),
+        year=race_dict.get("year", 2024),
+        round=race_dict.get("round", 1),
+        circuit=circuit,
+        name=race_dict.get("race_name", f"Round {race_dict.get('round', 1)}"),
+        date=race_dict.get("date", ""),
+        is_sprint_weekend=race_dict.get("is_sprint_weekend", False),
+    )
+    driver_grid = [
+        {
+            "driver_code":    r["driver_code"],
+            "constructor_ref": r.get("constructor_ref", "unknown"),
+            "grid_position":  r.get("grid_position", 10),
+            "grid_penalty":   r.get("grid_penalty", 0),
+        }
+        for r in race_dict.get("results", [])
+        if r.get("driver_code")
+    ]
+    return race, driver_grid
+
+
+def tune_kalman_config(races: list, train_from: int, val_from: int,
+                        ridge_alpha: float = 10.0) -> dict:
+    """
+    TASK 3.2 — Grid search Q/R per KalmanConfig.
+    Massimizza Kendall tau sul primo anno di validation.
+    Usa n_mc=3000 per velocita. Esegui su 1 anno di val.
+    """
+    import itertools
+    from f1_predictor.pipeline import F1PredictionPipeline
+    from f1_predictor.models.driver_skill import TTTConfig
+    from f1_predictor.models.machine_pace import KalmanConfig
+    from f1_predictor.models.bayesian_race import RaceSimConfig
+
+    q_values = [0.001, 0.005, 0.01, 0.05, 0.10, 0.20]
+    r_values = [0.002, 0.004, 0.01, 0.05, 0.20, 0.50]
+
+    best_tau    = -float("inf")
+    best_config = {"Q": 0.001, "R": 0.004}
+    val_to      = val_from
+
+    for q, r in itertools.product(q_values, r_values):
+        try:
+            pipeline = F1PredictionPipeline(
+                ttt_config=TTTConfig(),
+                kalman_config=KalmanConfig(Q=q, R=r),
+                sim_config=RaceSimConfig(n_simulations=3_000),
+            )
+            m = _run_walkforward(
+                pipeline=pipeline, races=races,
+                train_from=train_from, val_from=val_from, val_to=val_to,
+                n_mc_sim=3_000, ridge_alpha=ridge_alpha,
+            )
+            tau = m.get("kendall_tau", 0.0)
+            log.info(f"  [KalmanTune] Q={q:.3f} R={r:.3f} -> tau={tau:.3f}")
+            if tau > best_tau:
+                best_tau    = tau
+                best_config = {"Q": q, "R": r}
+        except Exception as e:
+            log.debug(f"  [KalmanTune] Q={q} R={r} failed: {e}")
+            continue
+
+    log.info(f"[KalmanTune] Best: Q={best_config['Q']} R={best_config['R']} -> tau={best_tau:.3f}")
+    return best_config
 
 def _simulate_roi(probs: list[float], outcomes: list[int],
                   kelly_frac: float = 0.25, edge_threshold: float = 0.04) -> float:
@@ -394,20 +530,29 @@ def _simulate_roi(probs: list[float], outcomes: list[int],
 
 
 def _compute_ece(probs: list[float], outcomes: list[int], n_bins: int = 10) -> float:
-    """Expected Calibration Error su n_bins uniformi."""
+    """
+    Expected Calibration Error con bin per quantili.
+
+    FIX v2: usa quantili invece di bin uniformi [0,1] per evitare che la
+    maggior parte dei bin sia vuota. Con p_win ~ 0.05 per tutti, i bin
+    uniformi cadono nello stesso bucket → ECE artificialmente = 0.0.
+    I bin per quantili garantiscono ~N/n_bins osservazioni per bin.
+    """
     import numpy as np
-    if len(probs) < 10:
+    if len(probs) < 20:
         return 0.1
 
     probs_arr    = np.array(probs)
     outcomes_arr = np.array(outcomes, dtype=float)
+    n            = len(probs_arr)
+
+    quantiles = np.percentile(probs_arr, np.linspace(0, 100, n_bins + 1))
     ece = 0.0
-    n   = len(probs_arr)
 
     for i in range(n_bins):
-        lo = i / n_bins
-        hi = (i + 1) / n_bins
-        mask = (probs_arr >= lo) & (probs_arr < hi)
+        lo, hi = quantiles[i], quantiles[i + 1]
+        mask = (probs_arr >= lo) & (probs_arr <= hi) if i == n_bins - 1 \
+               else (probs_arr >= lo) & (probs_arr < hi)
         if mask.sum() == 0:
             continue
         avg_conf = probs_arr[mask].mean()

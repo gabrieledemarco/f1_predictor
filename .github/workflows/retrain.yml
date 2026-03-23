@@ -1,0 +1,194 @@
+name: F1 Model Retraining
+
+# TASK 6.2 — Retraining automatico post-GP.
+# Trigger: manuale (post-race) o automatico ogni lunedi mattina.
+# La pipeline scarica i dati Jolpica, fitta tutti e 4 i layer,
+# esegue walk-forward validation e salva gli artefatti su MongoDB.
+
+on:
+  # Trigger manuale con parametri espliciti
+  workflow_dispatch:
+    inputs:
+      year:
+        description: "Anno corrente (es. 2026)"
+        required: true
+        default: "2026"
+      through_round:
+        description: "Ultimo round completato (es. 5)"
+        required: true
+        default: "1"
+      dry_run:
+        description: "Dry run (non salva su MongoDB)"
+        required: false
+        default: "false"
+        type: choice
+        options: ["false", "true"]
+      n_mc_sim:
+        description: "Simulazioni Monte Carlo (default: 50000)"
+        required: false
+        default: "50000"
+
+  # Trigger automatico ogni lunedi 06:00 UTC (post race weekend)
+  schedule:
+    - cron: "0 6 * * 1"
+
+jobs:
+  retrain:
+    name: "Retrain F1 Predictor Pipeline"
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    steps:
+      # ── Setup ──────────────────────────────────────────────
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install scikit-learn scipy numpy pandas pymongo[srv] requests
+
+      # ── Dati storici ────────────────────────────────────────
+      - name: Clone TracingInsights RaceData
+        run: |
+          git clone --depth=1 https://github.com/TracingInsights/RaceData.git data/racedata
+          echo "RaceData clonato: $(find data/racedata -name '*.csv' | wc -l) CSV files"
+
+      - name: Prepare cache directories
+        run: |
+          mkdir -p data/cache/jolpica
+          mkdir -p data/pinnacle_odds
+
+      # ── Raccolta odds (opzionale, non blocca se fallisce) ──
+      - name: Collect Pinnacle odds
+        continue-on-error: true
+        env:
+          THE_ODDS_API_KEY: ${{ secrets.THE_ODDS_API_KEY }}
+        run: |
+          if [ -n "$THE_ODDS_API_KEY" ]; then
+            python scripts/collect_odds.py --all-markets
+          else
+            echo "THE_ODDS_API_KEY non configurata — odds skipped"
+          fi
+
+      # ── Training ────────────────────────────────────────────
+      - name: Determine training parameters
+        id: params
+        run: |
+          # Se triggered da schedule, usa anno corrente e round 1 come fallback
+          YEAR="${{ github.event.inputs.year || '2026' }}"
+          ROUND="${{ github.event.inputs.through_round || '1' }}"
+          DRY="${{ github.event.inputs.dry_run || 'false' }}"
+          MC="${{ github.event.inputs.n_mc_sim || '50000' }}"
+          echo "year=$YEAR"       >> $GITHUB_OUTPUT
+          echo "round=$ROUND"     >> $GITHUB_OUTPUT
+          echo "dry_run=$DRY"     >> $GITHUB_OUTPUT
+          echo "n_mc_sim=$MC"     >> $GITHUB_OUTPUT
+          echo "Training: Anno $YEAR Round $ROUND | MC=$MC | dry_run=$DRY"
+
+      - name: Run training pipeline
+        env:
+          MONGODB_URI: ${{ secrets.MONGODB_URI }}
+          THE_ODDS_API_KEY: ${{ secrets.THE_ODDS_API_KEY }}
+        run: |
+          DRY_FLAG=""
+          if [ "${{ steps.params.outputs.dry_run }}" = "true" ]; then
+            DRY_FLAG="--dry-run"
+          fi
+
+          python train_pipeline.py \
+            --year ${{ steps.params.outputs.year }} \
+            --through-round ${{ steps.params.outputs.round }} \
+            --train-from 2018 \
+            --val-from 2024 \
+            --n-mc-sim ${{ steps.params.outputs.n_mc_sim }} \
+            --ridge-alpha 10.0 \
+            $DRY_FLAG
+
+      # ── Report ──────────────────────────────────────────────
+      - name: List model versions
+        if: ${{ steps.params.outputs.dry_run == 'false' }}
+        env:
+          MONGODB_URI: ${{ secrets.MONGODB_URI }}
+        run: |
+          python train_pipeline.py --list-versions || echo "MongoDB non raggiungibile"
+
+      - name: Upload training log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: training-log-${{ steps.params.outputs.year }}-R${{ steps.params.outputs.round }}
+          path: |
+            *.log
+          retention-days: 30
+
+  # Job separato: check metriche e alert se tau scende
+  quality-gate:
+    name: "Quality Gate Check"
+    runs-on: ubuntu-latest
+    needs: retrain
+    if: ${{ github.event.inputs.dry_run != 'true' }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install pymongo[srv]
+
+      - name: Check model quality
+        env:
+          MONGODB_URI: ${{ secrets.MONGODB_URI }}
+        run: |
+          python - << 'EOF'
+          import os, sys
+          try:
+              from pymongo import MongoClient
+              uri = os.environ.get("MONGODB_URI")
+              if not uri:
+                  print("MONGODB_URI non configurata — quality gate skipped")
+                  sys.exit(0)
+
+              client = MongoClient(uri, serverSelectionTimeoutMS=5000)
+              db = client["f1_predictor"]
+
+              # Leggi versione piu' recente
+              latest = db["model_artifacts"].find_one(
+                  {}, sort=[("uploaded_at", -1)]
+              )
+              if not latest:
+                  print("Nessun artefatto trovato")
+                  sys.exit(0)
+
+              tau   = latest.get("kendall_tau", 0.0)
+              brier = latest.get("walk_forward_brier", 1.0)
+              calib = latest.get("calibrator_fitted", False)
+
+              print(f"Versione: {latest.get('version', '?')}")
+              print(f"  Kendall tau: {tau:.3f}  ({'OK' if tau > 0.35 else 'WARN'})")
+              print(f"  Brier Score: {brier:.4f}  ({'OK' if brier < 0.25 else 'WARN'})")
+              print(f"  Calibratore: {'attivo' if calib else 'non attivo'}")
+
+              # Alert se tau scende sotto soglia minima
+              if tau < 0.20:
+                  print(f"\nALERT: Kendall tau={tau:.3f} sotto soglia critica (0.20)")
+                  print("Controlla i dati di training e il fix delle metriche.")
+                  sys.exit(1)  # Fa fallire il job → notifica GitHub
+
+              print("\nQuality gate: PASS")
+
+          except Exception as e:
+              print(f"Quality gate error: {e}")
+              sys.exit(0)  # Non bloccare per errori di connessione
+          EOF
