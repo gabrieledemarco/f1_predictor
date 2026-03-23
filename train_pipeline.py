@@ -282,10 +282,32 @@ def _run_walkforward(pipeline, races: list[dict],
     race_briers     = []
 
     import gc
+    import time as _time
 
-    for race in test_races:
+    n_test         = len(test_races)
+    n_mc_wf        = min(n_mc_sim, 5_000)
+    wf_start_time  = _time.time()
+    lap_times_sec  = []  # per-race elapsed time for ETA
+
+    # Stima durata basata su benchmark empirico: ~2-8s/gara con 5k MC
+    est_sec_per_race = 5 * (n_mc_wf / 5_000)   # scala con n_mc
+    est_total_min    = (n_test * est_sec_per_race) / 60
+    log.info(
+        f"  [WF] Avvio loop su {n_test} gare di test "
+        f"({val_from}\u2013{val_to}) | MC/gara={n_mc_wf:,} | "
+        f"train_races={len(train_races)} | "
+        f"durata stimata ~{est_total_min:.0f}-{est_total_min*2:.0f} min"
+    )
+
+    for race_idx, race in enumerate(test_races, start=1):
+        race_t0 = _time.time()
         results = race.get("results", [])
+        race_label = (
+            f"{race.get('year','?')} R{str(race.get('round','?')).zfill(2)} "
+            f"{race.get('race_name', '')[:22]}"
+        )
         if not results:
+            log.debug(f"  [WF] {race_idx}/{n_test} {race_label} — skip (no results)")
             continue
 
         circuit_type_str = race.get("circuit_type", "mixed")
@@ -372,6 +394,37 @@ def _run_walkforward(pipeline, races: list[dict],
         # Expanding window update — GC after each race to prevent memory growth
         wf_pipeline.fit([race], verbose=False)
         gc.collect()
+
+        # ── Progress log con ETA ──────────────────────────────────────────────
+        race_elapsed = _time.time() - race_t0
+        lap_times_sec.append(race_elapsed)
+        avg_sec      = sum(lap_times_sec) / len(lap_times_sec)
+        remaining    = n_test - race_idx
+        eta_sec      = avg_sec * remaining
+        total_elapsed = _time.time() - wf_start_time
+
+        # Metriche rolling (ultime 5 gare)
+        tau_rolling   = float(sum(race_taus[-5:])  / len(race_taus[-5:]))  if race_taus   else float("nan")
+        brier_rolling = float(sum(race_briers[-5:]) / len(race_briers[-5:])) if race_briers else float("nan")
+
+        eta_str = (
+            f"{int(eta_sec//60)}m{int(eta_sec%60):02d}s" if eta_sec < 3600
+            else f"{int(eta_sec//3600)}h{int((eta_sec%3600)//60):02d}m"
+        )
+        elapsed_str = (
+            f"{int(total_elapsed//60)}m{int(total_elapsed%60):02d}s" if total_elapsed < 3600
+            else f"{int(total_elapsed//3600)}h{int((total_elapsed%3600)//60):02d}m"
+        )
+
+        tau_str   = f"{tau_rolling:.3f}"   if not (tau_rolling   != tau_rolling)   else "n/a"
+        brier_str = f"{brier_rolling:.4f}" if not (brier_rolling != brier_rolling) else "n/a"
+
+        log.info(
+            f"  [WF] {race_idx:>3}/{n_test} | {race_label:<30} | "
+            f"{race_elapsed:>5.1f}s | "
+            f"tau(5)={tau_str} brier(5)={brier_str} | "
+            f"elapsed={elapsed_str} ETA={eta_str}"
+        )
 
     # ----------------------------------------------------------------
     # Aggregate metrics
