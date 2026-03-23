@@ -1,0 +1,24 @@
+# F1 Predictor — Dipendenze Python
+# Installazione: pip install -r requirements.txt
+#
+# Testato su Python 3.10 / 3.11 / 3.12
+
+# ── Calcolo scientifico ─────────────────────────────────────
+numpy>=1.24.0
+scipy>=1.10.0
+pandas>=2.0.0
+
+# ── Machine Learning ────────────────────────────────────────
+scikit-learn>=1.3.0
+
+# ── Database ────────────────────────────────────────────────
+pymongo>=4.6.0               # MongoDB Atlas + GridFS (SRV incluso dalla 4.x in poi)
+
+# ── HTTP / API ──────────────────────────────────────────────
+requests>=2.31.0             # Jolpica API, The Odds API, OpenF1
+
+# ── Variabili d'ambiente ────────────────────────────────────
+python-dotenv>=1.0.0         # lettura .env locale
+
+# ── Logging / utility ───────────────────────────────────────
+# (logging, argparse, pathlib, dataclasses, typing sono stdlib — nessuna installazione)
