@@ -67,10 +67,34 @@ class TTTConfig:
     """
     mu_0: float = 25.0
     sigma_0: float = 8.333
-    beta: float = 4.167
-    tau: float = 0.833
+    beta: float = 4.167       # performance noise per race
+    tau: float = 0.833        # process noise (skill drift between races)
     draw_margin: float = 0.0
     decay_factor: float = 0.15
+
+    @classmethod
+    def for_2026(cls) -> "TTTConfig":
+        """
+        TASK 3.3 — Preset calibrato per il regolamento 2026.
+
+        Il regolamento 2026 introduce:
+        - Motore ibrido 50/50 (nuovi PU, ranking incerti)
+        - Active aero in sostituzione del DRS (nuova curva di apprendimento)
+        - Nuovi entrant PU (Audi/sauber, Honda standalone)
+
+        Conseguenze per il modello:
+        - beta aumentato: piu' varianza nelle singole gare (novita' tecnica)
+        - tau aumentato: skill puo' cambiare piu' velocemente (adattamento)
+        - decay_factor aumentato: reset stagionale piu' aggressivo
+        """
+        return cls(
+            mu_0=25.0,
+            sigma_0=8.333,
+            beta=5.5,          # > 4.167 default: piu' upset possibili con nuovi sistemi
+            tau=1.0,           # > 0.833 default: adattamento piu' rapido al nuovo regolamento
+            draw_margin=0.0,
+            decay_factor=0.25, # > 0.15 default: reset stagionale amplificato (2026 e' una soglia)
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -146,6 +170,9 @@ class DriverSkillModel:
         self.config = config or TTTConfig()
         self._ratings: dict[str, dict] = defaultdict(self._default_rating)
         self._ratings_by_circuit: dict[tuple, dict] = defaultdict(self._default_rating)
+        # TASK 5.2 — conta le gare osservate per (driver, circuit_type)
+        # necessario per il blending ponderato in get_rating()
+        self._n_races_by_circuit: dict[tuple, int] = defaultdict(int)
         self._history: list[dict] = []
 
     def _default_rating(self) -> dict:
@@ -188,24 +215,62 @@ class DriverSkillModel:
         """
         Retrieve current rating for a driver.
 
+        TASK 5.2 — Circuit-type blending:
+        Se il pilota ha >= MIN_CIRCUIT_RACES gare su questo tipo di circuito,
+        usa un blend pesato fra rating globale e rating circuit-specifico.
+        Sotto soglia, il rating circuit-specifico ha troppa incertezza
+        (sigma alta) per essere affidabile da solo — si usa solo il globale.
+
+        Blend:
+            w_circuit = min(n_races / MIN_CIRCUIT_RACES, 1.0)
+            mu_blend = (1-w) * mu_global + w * mu_circuit
+            sigma_blend = min(sigma_global, sigma_circuit) * 1.05
+
+        Questo cattura il fatto che Alonso su circuiti stradali e' piu'
+        forte del suo rating globale, ma evita noise per rookies con pochi dati.
+
         Args:
             driver_code: 3-letter FIA code (e.g., 'VER').
-            circuit_type: If provided, returns circuit-conditional rating.
+            circuit_type: If provided, returns blended circuit-conditional rating.
 
         Returns:
             DriverSkillRating with mu, sigma, and conservative_rating.
         """
-        if circuit_type is not None:
-            key = (driver_code, circuit_type)
-            r = self._ratings_by_circuit[key]
-        else:
-            r = self._ratings[driver_code]
+        MIN_CIRCUIT_RACES = 5  # soglia minima per dare peso al rating circuit-specifico
+
+        global_r = self._ratings[driver_code]
+
+        if circuit_type is None:
+            return DriverSkillRating(
+                driver_code=driver_code,
+                circuit_type=None,
+                mu=global_r["mu"],
+                sigma=global_r["sigma"],
+            )
+
+        key = (driver_code, circuit_type)
+        circuit_r = self._ratings_by_circuit[key]
+        n_circuit = self._n_races_by_circuit[key]
+
+        if n_circuit < MIN_CIRCUIT_RACES:
+            # Troppo pochi dati sul circuit type: usa rating globale puro
+            return DriverSkillRating(
+                driver_code=driver_code,
+                circuit_type=circuit_type,
+                mu=global_r["mu"],
+                sigma=global_r["sigma"],
+            )
+
+        # Blend pesato: piu' gare su quel tipo → piu' peso al rating specifico
+        w = min(n_circuit / MIN_CIRCUIT_RACES, 1.0)  # satura a 1.0 dopo MIN_CIRCUIT_RACES gare
+        mu_blend    = (1 - w) * global_r["mu"]    + w * circuit_r["mu"]
+        sigma_blend = min(global_r["sigma"], circuit_r["sigma"]) * 1.05  # leggero aumento incertezza
 
         return DriverSkillRating(
             driver_code=driver_code,
             circuit_type=circuit_type,
-            mu=r["mu"],
-            sigma=r["sigma"]
+            mu=float(mu_blend),
+            sigma=float(sigma_blend),
         )
 
     def get_all_ratings(self, circuit_type: Optional[CircuitType] = None
@@ -336,6 +401,12 @@ class DriverSkillModel:
                     )
                     self._ratings_by_circuit[wk] = {"mu": cw_mu, "sigma": cw_sig}
                     self._ratings_by_circuit[lk] = {"mu": cl_mu, "sigma": cl_sig}
+
+        # TASK 5.2 — aggiorna contatore gare per circuit type (per blending in get_rating)
+        if circuit_type is not None:
+            for res in ordered:
+                key = (res.driver_code, circuit_type)
+                self._n_races_by_circuit[key] += 1
 
         # Log snapshot for history
         snapshot = {
