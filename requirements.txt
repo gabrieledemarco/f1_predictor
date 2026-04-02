@@ -22,3 +22,4 @@ python-dotenv>=1.0.0         # lettura .env locale
 
 # ── Logging / utility ───────────────────────────────────────
 # (logging, argparse, pathlib, dataclasses, typing sono stdlib — nessuna installazione)
+fastf1>=3.3.0
