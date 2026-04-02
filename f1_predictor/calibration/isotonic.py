@@ -58,13 +58,13 @@ class PinnacleCalibrationLayer:
         edge = calibrator.compute_edge(p_cal, p_pinnacle)
     """
 
-    def __init__(self, min_samples: int = 100, fallback: str = "passthrough"):
+    def __init__(self, min_samples: int = 100, fallback: str = "platt"):
         """
         Args:
             min_samples: Minimum samples required for fitting.
-                         If fewer samples, fall back to passthrough.
-            fallback: 'passthrough' (return p_model unchanged) or
-                     'platt' (fit logistic as alternative).
+                          If fewer samples, fall back to platt (or passthrough if specified).
+            fallback: 'platt' (fit logistic as alternative, default) or
+                      'passthrough' (return p_model unchanged).
         """
         self.min_samples = min_samples
         self.fallback = fallback

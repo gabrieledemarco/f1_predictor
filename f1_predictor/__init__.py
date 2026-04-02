@@ -11,6 +11,12 @@ Layer:
     3:  Ensemble adjustment (Ridge meta-learner)
     4:  Calibration against market odds (Isotonic)
 
+Moduli aggiuntivi:
+    - features: Feature engineering e statistiche storiche
+    - validation: Validazione walk-forward e metriche
+    - calibration: Calibrazione contro quote di mercato
+    - reports: Generazione report di edge
+
 Uso principale:
     from f1_predictor.pipeline import F1PredictionPipeline
     
@@ -19,5 +25,5 @@ Uso principale:
     result = pipeline.predict_race(race, driver_grid, pinnacle_odds)
 """
 
-__version__ = "2.0.0"
+__version__ = "2.0.1"  # Updated for historical features implementation
 __author__ = "F1 Predictor Team"

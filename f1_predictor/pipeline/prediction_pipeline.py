@@ -31,12 +31,21 @@ from f1_predictor.domain.entities import (
 from f1_predictor.models.driver_skill import DriverSkillModel, TTTConfig
 from f1_predictor.models.machine_pace import MachinePaceModel, KalmanConfig
 from f1_predictor.models.bayesian_race import BayesianRaceModel, RaceSimConfig, DriverRaceInput
+from f1_predictor.models.dnf_estimator import BetaBinomialDNFRateEstimator
 from f1_predictor.models.ensemble import EnsembleModel, EnsembleFeatures
 from f1_predictor.calibration.devig import devig_power
 from f1_predictor.calibration.isotonic import PinnacleCalibrationLayer
 from f1_predictor.calibration.edge_tracker import BetaBinomialEdgeTracker
 from f1_predictor.validation.backtesting import BettingBacktester, BacktestConfig
 from f1_predictor.reports.edge_report import EdgeReportGenerator
+
+# TASK 5.1 — Feature storiche
+try:
+    from f1_predictor.features.historical_stats import compute_driver_historical_features
+    HAS_HISTORICAL_FEATURES = True
+except ImportError:
+    HAS_HISTORICAL_FEATURES = False
+    compute_driver_historical_features = None
 
 
 class F1PredictionPipeline:
@@ -51,6 +60,7 @@ class F1PredictionPipeline:
                  ttt_config: Optional[TTTConfig] = None,
                  kalman_config: Optional[KalmanConfig] = None,
                  sim_config: Optional[RaceSimConfig] = None,
+                 dnf_estimator: Optional[BetaBinomialDNFRateEstimator] = None,
                  backtest_config: Optional[BacktestConfig] = None,
                  min_edge: float = 0.04):
 
@@ -58,8 +68,10 @@ class F1PredictionPipeline:
         self.driver_skill = DriverSkillModel(config=ttt_config)
         # Layer 1b
         self.machine_pace = MachinePaceModel(config=kalman_config)
+        # DNF estimator
+        self.dnf_estimator = dnf_estimator or BetaBinomialDNFRateEstimator()
         # Layer 2
-        self.race_sim = BayesianRaceModel(config=sim_config)
+        self.race_sim = BayesianRaceModel(config=sim_config, estimator=self.dnf_estimator)
         # Layer 3
         self.ensemble = EnsembleModel(alpha=10.0)
         # Layer 4
@@ -73,6 +85,8 @@ class F1PredictionPipeline:
 
         self._calibration_records: list[CalibrationRecord] = []
         self._is_fitted = False
+        # TASK 5.1 — Store historical races for feature computation
+        self._historical_races: list[dict] = []
 
     def fit(self, historical_races: list[dict],
             historical_odds: Optional[dict] = None,
@@ -146,9 +160,14 @@ class F1PredictionPipeline:
                     print(f"[Pipeline] Fitting Isotonic Calibrator on {len(cal_probs)} records...")
                 self.calibrator.fit(cal_probs, cal_outcomes)
 
+        # TASK 5.1 — Store historical races for feature computation
+        self._historical_races = historical_races.copy()
+        # Load historical races into DNF estimator (TASK 5.3)
+        self.dnf_estimator.load_from_historical_races(historical_races)
+        
         self._is_fitted = True
         if verbose:
-            print("[Pipeline] ✓ Fitting complete.")
+            print("[Pipeline] OK Fitting complete.")
         return self
 
     def predict_race(self, race: Race,
@@ -197,9 +216,32 @@ class F1PredictionPipeline:
 
         # Layer 3: Ensemble adjustment (if fitted)
         features = {}
+        
+        # TASK 5.1 — Compute historical features
+        historical_features = {}
+        if HAS_HISTORICAL_FEATURES and self._historical_races:
+            try:
+                driver_codes = [di.driver_code for di in driver_inputs]
+                historical_features = compute_driver_historical_features(
+                    historical_races=self._historical_races,
+                    target_race_id=race.race_id,
+                    driver_codes=driver_codes,
+                    current_year=race.year
+                )
+                if verbose:
+                    print(f"[Pipeline] Computed historical features for {len(historical_features)} drivers")
+            except Exception as e:
+                if verbose:
+                    print(f"[Pipeline] Warning: historical features computation failed: {e}")
+                historical_features = {}
+        
         for di in driver_inputs:
             code = di.driver_code
             mp = mc_probs[code]
+            
+            # Get historical features for this driver (default if not available)
+            hist_feat = historical_features.get(code)
+            
             feat = EnsembleFeatures(
                 driver_skill_mu=di.skill_mu,
                 driver_skill_sigma=di.skill_sigma,
@@ -216,6 +258,10 @@ class F1PredictionPipeline:
                     race.circuit.circuit_type
                 ) if hasattr(race.circuit.circuit_type.__class__, '__iter__') else 0,
                 has_grid_penalty=di.grid_penalty > 0,
+                # TASK 5.1 — Historical features
+                h2h_win_rate_3season=hist_feat.h2h_win_rate_3season if hist_feat else 0.5,
+                elo_delta_vs_field=hist_feat.elo_delta_vs_field if hist_feat else 0.0,
+                dnf_rate_relative=hist_feat.dnf_rate_relative if hist_feat else 0.0,
             )
             features[code] = feat
 
@@ -291,6 +337,26 @@ class F1PredictionPipeline:
         self.driver_skill._process_race(
             race_id, rr_list, circuit_type=None, year=None
         )
+        
+        # Update DNF estimator with race results (TASK 5.3)
+        self.dnf_estimator.update(results)
+        
+        # TASK 5.1 — Update historical races with new race data
+        # Note: This is a minimal update. In production, caller should provide
+        # full race dict with year, circuit_type, etc. for proper feature computation.
+        if hasattr(self, '_historical_races'):
+            # Create minimal race dict for historical feature computation
+            race_dict = {
+                "race_id": race_id,
+                "results": results,
+                # Default values (should be provided by caller)
+                "year": 2026,  # TODO: Get from caller
+                "circuit_type": "mixed",
+            }
+            self._historical_races.append(race_dict)
+            # Keep only last 100 races for memory efficiency
+            if len(self._historical_races) > 100:
+                self._historical_races = self._historical_races[-100:]
 
     def get_edge_summary(self) -> list[dict]:
         """Return current edge summary across all markets."""

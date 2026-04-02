@@ -57,7 +57,8 @@ MAJOR_REG_CHANGES = {2009, 2014, 2017, 2022}
 
 # Mapping circuitId Jolpica → CircuitType enum
 # Fonte: Heilmeier et al. (2020) — 5 cluster
-CIRCUIT_TYPE_MAP: dict[str, str] = {
+# Base mapping - can be extended via JolpicaLoader.add_circuit_type()
+_BASE_CIRCUIT_TYPE_MAP: dict[str, str] = {
     # STREET
     "monaco":          "street",
     "baku":            "street",
@@ -113,6 +114,35 @@ class JolpicaLoader:
         cache_dir: Directory locale per la cache JSON.
         force_refresh: Se True, ignora la cache e re-fetcha sempre.
     """
+    
+    # Circuit type mapping - can be extended at runtime
+    circuit_type_map: dict[str, str] = _BASE_CIRCUIT_TYPE_MAP.copy()
+    
+    @classmethod
+    def add_circuit_type(cls, circuit_id: str, circuit_type: str):
+        """
+        Add or update a circuit type mapping.
+        
+        Args:
+            circuit_id: Jolpica circuit identifier (e.g., 'monaco').
+            circuit_type: One of 'street', 'high_df', 'high_speed', 'mixed', 'desert'.
+        """
+        if circuit_type not in {'street', 'high_df', 'high_speed', 'mixed', 'desert'}:
+            raise ValueError(f"Invalid circuit_type: {circuit_type}")
+        cls.circuit_type_map[circuit_id] = circuit_type
+    
+    @classmethod
+    def load_circuit_types_from_json(cls, json_path: str):
+        """
+        Load circuit type mappings from a JSON file.
+        
+        JSON format: {"circuit_id": "circuit_type", ...}
+        """
+        import json
+        with open(json_path, 'r', encoding='utf-8') as f:
+            mappings = json.load(f)
+        for circuit_id, circuit_type in mappings.items():
+            cls.add_circuit_type(circuit_id, circuit_type)
 
     def __init__(self,
                  cache_dir: str = "data/cache/jolpica",
@@ -205,7 +235,7 @@ class JolpicaLoader:
         race_info = races_list[0]
         circuit   = race_info.get("Circuit", {})
         circuit_id = circuit.get("circuitId", "unknown")
-        circuit_type = CIRCUIT_TYPE_MAP.get(circuit_id, "mixed")
+        circuit_type = self.circuit_type_map.get(circuit_id, "mixed")
 
         last_round = SEASON_LAST_ROUND.get(year, 24)
         is_season_end = (round_num == last_round)
