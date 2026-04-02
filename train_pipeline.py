@@ -746,12 +746,15 @@ def _extract_artifacts(pipeline, ridge_info: dict, calibrator) -> dict:
             "mu": rating_dict["mu"], "sigma": rating_dict["sigma"]
         }
 
-    # Kalman states
+    # Kalman states (multivariato: x ∈ R^12, P ∈ R^12×12)
+    # Converti np.ndarray → list per serializzazione BSON (MongoDB)
     kalman_states = {}
     for constructor, state in pipeline.machine_pace._states.items():
+        x = state["x"]
+        P = state["P"]
         kalman_states[constructor] = {
-            "mu_pace":    state["x"],
-            "sigma_pace": state["P"] ** 0.5,
+            "x_vector": x.tolist() if hasattr(x, "tolist") else list(x),
+            "P_matrix": P.tolist() if hasattr(P, "tolist") else [list(row) for row in P],
         }
 
     # Calibrator (serializzabile)

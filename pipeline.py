@@ -118,9 +118,22 @@ class F1PredictionPipeline:
                 all_results.append(rr)
 
             # Update machine pace (Layer 1b)
+            from f1_predictor.data.circuit_profiles import get_profile_safe
+            from f1_predictor.domain.entities import CircuitType
+            _circuit_ref  = race_dict.get("circuit_ref", "")
+            _circuit_type_str = race_dict.get("circuit_type", "mixed")
+            try:
+                _fallback_type = CircuitType(_circuit_type_str)
+            except ValueError:
+                _fallback_type = CircuitType.MIXED
+            _circuit_profile = get_profile_safe(_circuit_ref, fallback_type=_fallback_type)
+
             pace_obs = race_dict.get("constructor_pace_observations", {})
             for constructor_ref, observed_pace in pace_obs.items():
-                self.machine_pace.update(constructor_ref, race_id, observed_pace)
+                self.machine_pace.update(
+                    constructor_ref, race_id, observed_pace,
+                    circuit=_circuit_profile,
+                )
 
             # Season boundary: apply decay
             if race_dict.get("is_season_end"):
@@ -175,7 +188,17 @@ class F1PredictionPipeline:
             constructor = entry.get("constructor_ref", "unknown")
 
             skill = self.driver_skill.get_rating(code, race.circuit.circuit_type)
-            pace = self.machine_pace.get_estimate(constructor, race.race_id)
+
+            from f1_predictor.data.circuit_profiles import get_profile_safe
+            _race_circuit_profile = get_profile_safe(
+                getattr(race.circuit, "ref", ""),
+                fallback_type=race.circuit.circuit_type,
+            )
+            pace = self.machine_pace.get_estimate(
+                constructor,
+                circuit=_race_circuit_profile,
+                race_id=race.race_id,
+            )
 
             di = DriverRaceInput(
                 driver_code=code,
