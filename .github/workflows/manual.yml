@@ -126,16 +126,3 @@ jobs:
               labels: ['data-update', 'automated']
             })
       
-      - name: Send Discord notification on failure
-        if: failure()
-        uses: nthompson/github-action-discord-notification@v1.0.0
-        with:
-          webhook_url: ${{ secrets.DISCORD_WEBHOOK_URL }}
-          message: '❌ Kaggle data update failed! Check logs.'
-      
-      - name: Send Discord notification on success
-        if: success()
-        uses: nthompson/github-action-discord-notification@v1.0.0
-        with:
-          webhook_url: ${{ secrets.DISCORD_WEBHOOK_URL }}
-          message: '✅ Kaggle F1 data updated successfully!'
