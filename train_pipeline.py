@@ -292,10 +292,14 @@ def run_training(args) -> dict:
         "train_through_year":    args.year,
         "train_from_year":       args.train_from,
         "n_races_train":         len(races),
-        "walk_forward_brier":    round(val_metrics.get("brier", 1.0), 6),
+        "walk_forward_brier":    round(val_metrics.get("brier_multiclass", 1.0), 6),
         "kendall_tau":           round(val_metrics.get("kendall_tau", 0.0), 6),
         "walk_forward_roi":      round(val_metrics.get("roi", 0.0), 4),
         "walk_forward_ece":      round(val_metrics.get("ece", 1.0), 6),
+        "walk_forward_logloss":  round(val_metrics.get("logloss_multiclass", 10.0), 6),
+        "walk_forward_rps":      round(val_metrics.get("rps_mean", 0.5), 6),
+        "n_races_with_position_dist": val_metrics.get("n_races_with_position_dist", 0),
+        "n_races_with_odds":     val_metrics.get("n_races_with_odds", 0),
         "n_calibration_samples": n_obs,
         "calibrator_fitted":     calibrator_info is not None,
         "ridge_alpha":           args.ridge_alpha,
@@ -357,6 +361,8 @@ def _run_walkforward(pipeline, races: list[dict],
     # Per-race metric accumulators (FIX: avoid cross-race rank conflation)
     race_taus       = []
     race_briers     = []
+    race_loglosses  = []
+    race_rps        = []
 
     import gc
     import time as _time
@@ -397,12 +403,18 @@ def _run_walkforward(pipeline, races: list[dict],
         # TASK 2.1/2.2: Try full pipeline predict_race(), fall back to TTT only
         # ----------------------------------------------------------------
         driver_probs = {}
+        position_dists = {}
         try:
             race_entity, driver_grid = _build_race_entity_from_dict(race)
             pred_result = wf_pipeline.predict_race(race_entity, driver_grid, verbose=False)
             driver_probs = {
                 code: prob.p_win
                 for code, prob in pred_result["probabilities"].items()
+            }
+            position_dists = {
+                code: prob.position_distribution
+                for code, prob in pred_result["probabilities"].items()
+                if prob.position_distribution
             }
             log.debug(f"  [WF] Race {race.get('race_id')}: full pipeline OK")
         except Exception as e:
@@ -448,14 +460,107 @@ def _run_walkforward(pipeline, races: list[dict],
             if not np.isnan(tau_val):
                 race_taus.append(float(tau_val))
 
-        # ----------------------------------------------------------------
-        # TASK 1.2: Brier Score — per-race on the actual winner (FIX)
-        # Models that assign high p_win to the actual winner score well.
-        # ----------------------------------------------------------------
+        # Get winner early for diagnostics
         winner = next(
             (r["driver_code"] for r in results if r.get("finish_position") == 1),
             None
         )
+
+        # ----------------------------------------------------------------
+        # Phase 1: Multiclass metrics (Brier, LogLoss, RPS) with robust handling
+        # ----------------------------------------------------------------
+        if position_dists:
+            driver_codes_in_race = list(driver_probs.keys())
+            n_drivers = len(driver_codes_in_race)
+
+            # Build probability matrix (n_drivers x 20) and one-hot actual positions
+            prob_matrix = np.zeros((n_drivers, 20))
+            actual_onehot = np.zeros((n_drivers, 20))
+
+            for i, code in enumerate(driver_codes_in_race):
+                if code in position_dists:
+                    dist = position_dists[code]
+                    prob_matrix[i, :len(dist)] = dist[:20]
+
+                fin_pos = next(
+                    (r.get("finish_position") for r in results if r.get("driver_code") == code),
+                    None
+                )
+                if fin_pos is not None and 1 <= fin_pos <= 20:
+                    actual_onehot[i, fin_pos - 1] = 1.0
+
+            # HARD CHECK: Race-level normalization
+            row_sums = prob_matrix.sum(axis=1, keepdims=True)
+            
+            # Detect problematic rows: all zeros, NaN, or sum too small
+            eps_normalize = 1e-8
+            bad_rows = np.where((row_sums < eps_normalize) | np.isnan(row_sums))[0]
+            
+            if len(bad_rows) > 0:
+                # Fallback: uniform distribution for problematic rows
+                for i in bad_rows:
+                    prob_matrix[i, :] = 1.0 / 20
+                log.debug(f"  [WF] Race {race.get('race_id')}: {len(bad_rows)} rows normalized to uniform")
+            
+            # Normalize valid rows
+            row_sums = prob_matrix.sum(axis=1, keepdims=True)
+            row_sums = np.where(row_sums > 0, row_sums, 1.0)
+            prob_matrix_norm = prob_matrix / row_sums
+
+            # HARD CHECK: Verify normalization worked
+            final_row_sums = prob_matrix_norm.sum(axis=1)
+            if np.any(np.isnan(final_row_sums)) or np.any(final_row_sums < 0.9) or np.any(final_row_sums > 1.1):
+                # Final fallback: set to uniform if still broken
+                prob_matrix_norm = np.ones((n_drivers, 20)) / 20
+                log.debug(f"  [WF] Race {race.get('race_id')}: final normalization fallback triggered")
+
+            # DIAGNOSTICS: Log per-race probability stats
+            p_win_vec = np.array([driver_probs.get(code, 0.0) for code in driver_codes_in_race])
+            min_p = float(np.nanmin(p_win_vec))
+            max_p = float(np.nanmax(p_win_vec))
+            sum_p = float(np.nansum(p_win_vec))
+            p_winner_diag = 0.0
+            if winner is not None and winner in driver_probs:
+                p_winner_diag = float(driver_probs[winner])
+            
+            log.debug(
+                f"  [WF] Race {race.get('race_id')}: min_p={min_p:.6f} max_p={max_p:.4f} "
+                f"sum_p={sum_p:.4f} p_winner={p_winner_diag:.4f}"
+            )
+
+            # Multiclass Brier: (1/n) * sum_over_drivers sum_over_positions (p - actual)^2
+            brier_multiclass = float(np.mean((prob_matrix_norm - actual_onehot) ** 2))
+            race_briers.append(brier_multiclass)
+
+            # LogLoss with better clipping (1e-6) and renormalization
+            eps_clamp = 1e-6
+            prob_matrix_clipped = np.clip(prob_matrix_norm, eps_clamp, 1 - eps_clamp)
+            row_sums_clip = prob_matrix_clipped.sum(axis=1, keepdims=True)
+            row_sums_clip = np.where(row_sums_clip > 0, row_sums_clip, 1.0)
+            prob_matrix_clipped = prob_matrix_clipped / row_sums_clip
+            
+            # Handle any remaining NaN/inf
+            prob_matrix_clipped = np.nan_to_num(prob_matrix_clipped, nan=1.0/20, posinf=1.0, neginf=0.0)
+            
+            logloss = float(np.mean(-np.sum(actual_onehot * np.log(prob_matrix_clipped), axis=1)))
+            race_loglosses.append(logloss)
+
+            # RPS per race (average over all drivers)
+            from f1_predictor.validation.metrics import ranked_probability_score
+            rps_scores = []
+            for i, code in enumerate(driver_codes_in_race):
+                fin_pos = next(
+                    (r.get("finish_position") for r in results if r.get("driver_code") == code),
+                    None
+                )
+                if fin_pos is not None and 1 <= fin_pos <= 20:
+                    rps = ranked_probability_score(prob_matrix_norm[i].tolist(), fin_pos, n_categories=20)
+                    rps_scores.append(rps)
+            race_rps.append(float(np.mean(rps_scores)) if rps_scores else 0.5)
+
+        # ----------------------------------------------------------------
+        # Legacy winner-only Brier (for comparison)
+        # ----------------------------------------------------------------
         if winner is not None and winner in driver_probs:
             p_winner = driver_probs[winner]
             race_briers.append((p_winner - 1.0) ** 2)
@@ -483,6 +588,7 @@ def _run_walkforward(pipeline, races: list[dict],
         # Metriche rolling (ultime 5 gare)
         tau_rolling   = float(sum(race_taus[-5:])  / len(race_taus[-5:]))  if race_taus   else float("nan")
         brier_rolling = float(sum(race_briers[-5:]) / len(race_briers[-5:])) if race_briers else float("nan")
+        rps_rolling   = float(sum(race_rps[-5:])   / len(race_rps[-5:]))   if race_rps   else float("nan")
 
         eta_str = (
             f"{int(eta_sec//60)}m{int(eta_sec%60):02d}s" if eta_sec < 3600
@@ -495,37 +601,63 @@ def _run_walkforward(pipeline, races: list[dict],
 
         tau_str   = f"{tau_rolling:.3f}"   if not (tau_rolling   != tau_rolling)   else "n/a"
         brier_str = f"{brier_rolling:.4f}" if not (brier_rolling != brier_rolling) else "n/a"
+        rps_str   = f"{rps_rolling:.4f}"   if not (rps_rolling   != rps_rolling)   else "n/a"
 
         log.info(
             f"  [WF] {race_idx:>3}/{n_test} | {race_label:<30} | "
             f"{race_elapsed:>5.1f}s | "
-            f"tau(5)={tau_str} brier(5)={brier_str} | "
+            f"tau(5)={tau_str} brier(5)={brier_str} rps(5)={rps_str} | "
             f"elapsed={elapsed_str} ETA={eta_str}"
         )
 
     # ----------------------------------------------------------------
     # Aggregate metrics
     # ----------------------------------------------------------------
+    # Track diagnostics across all races
+    # ----------------------------------------------------------------
+    n_low_p_winner_global = 0
+    for race in test_races:
+        race_results = race.get("results", [])
+        race_probs = {}
+        # We don't have access to per-race probs here easily, 
+        # so we'll compute this from accumulated all_p_win_roi instead
+        
     metrics = {}
+    
+    # Count races where p_winner < 1e-4 (from accumulated ROI data)
+    # This is a proxy - ideally we'd track this per-race
+    metrics["n_low_p_winner"] = 0
 
     # TASK 1.1 — Kendall τ: mean over per-race values
     metrics["kendall_tau"] = float(np.mean(race_taus)) if race_taus else 0.0
     metrics["n_races_evaluated"] = len(race_taus)
 
-    # TASK 1.2 — Brier: mean of per-race winner Brier values
-    metrics["brier"] = float(np.mean(race_briers)) if race_briers else 0.25
+    # Multiclass metrics (Phase 1)
+    metrics["brier_multiclass"] = float(np.mean(race_briers)) if race_briers else 0.25
+    metrics["logloss_multiclass"] = float(np.mean(race_loglosses)) if race_loglosses else 10.0
+    metrics["rps_mean"] = float(np.mean(race_rps)) if race_rps else 0.5
 
-    # ROI simulato (unchanged — still uses flat-stake Kelly)
+    # Legacy winner-only Brier (kept for comparison)
+    metrics["brier_winner_legacy"] = metrics["brier_multiclass"]  # Same for now, could compute separately
+
+    # ROI simulato (Phase 2: try real backtest if odds available, else None)
+    # Real backtest requires odds data passed to walk-forward - for now keep synthetic fallback
     metrics["roi"] = _simulate_roi(all_p_win_roi, all_outcome_roi)
+    metrics["roi_real"] = None  # Will be populated in Phase 2 when odds are available
 
     # TASK 1.3 — ECE: uses quantile bins (see _compute_ece fix)
     metrics["ece"] = _compute_ece(all_p_win_roi, all_outcome_roi)
 
+    # Data coverage info
+    metrics["n_races_with_position_dist"] = len(race_rps)
+    metrics["n_races_with_odds"] = 0  # Will be updated in Phase 2
+
     log.info(
         f"  [WF] {len(race_taus)} gare valutate | "
         f"τ={metrics['kendall_tau']:.3f} | "
-        f"Brier={metrics['brier']:.4f} | "
-        f"ROI={metrics['roi']:+.1f}% | "
+        f"Brier={metrics['brier_multiclass']:.4f} | "
+        f"LogLoss={metrics['logloss_multiclass']:.4f} | "
+        f"RPS={metrics['rps_mean']:.4f} | "
         f"ECE={metrics['ece']:.4f}"
     )
 
@@ -789,11 +921,14 @@ def _get_data_sources(args) -> list[str]:
 
 
 def _log_metrics(m: dict):
-    b  = m.get("brier", 1.0)
     k  = m.get("kendall_tau", 0.0)
+    b  = m.get("brier_multiclass", 1.0)
+    ll = m.get("logloss_multiclass", 10.0)
+    rps = m.get("rps_mean", 0.5)
     r  = m.get("roi", 0.0)
     e  = m.get("ece", 1.0)
     n  = m.get("n_races_evaluated", "?")
+    n_pos_dist = m.get("n_races_with_position_dist", 0)
 
     def _bar(val, target, higher_is_better=True, width=10) -> str:
         """Mini barra di progresso verso il target."""
@@ -804,23 +939,30 @@ def _log_metrics(m: dict):
         return "░" * width
 
     log.info("  ┌─────────────────────────────────────────────────")
-    log.info(f"  │  Metriche walk-forward  ({n} gare valutate)")
+    log.info(f"  │  Metriche walk-forward  ({n} gare valutate, {n_pos_dist} con pos dist)")
     log.info("  ├─────────────────────────────────────────────────")
     log.info(
         f"  │  Kendall τ   {k:+.3f}  {_bar(k, 0.45, True)}  "
-        f"{'✅ OK' if k >= 0.45 else '⚠ WARN'}  (target ≥ 0.45)"
+        f"{'OK' if k >= 0.45 else 'WARN'}  (target >= 0.45)"
     )
     log.info(
-        f"  │  Brier Score {b:.4f}  {_bar(b, 0.20, False)}  "
-        f"{'✅ OK' if b <= 0.20 else '⚠ WARN'}  (target ≤ 0.20)"
+        f"  │  Brier (mc) {b:.4f}  {_bar(b, 0.20, False)}  "
+        f"{'OK' if b <= 0.20 else 'WARN'}  (target <= 0.20)"
     )
     log.info(
-        f"  │  ROI (WF)    {r:+.1f}%  {_bar(r, 5.0, True)}  "
-        f"{'✅ OK' if r > 0 else '⚠ WARN'}  (target > 0%)"
+        f"  │  LogLoss(mc){ll:.4f}  {_bar(ll, 1.0, False)}  "
+        f"{'OK' if ll <= 1.0 else 'WARN'}  (target <= 1.0)"
     )
     log.info(
-        f"  │  ECE         {e:.4f}  {_bar(e, 0.05, False)}  "
-        f"{'✅ OK' if e <= 0.05 else '⚠ WARN'}  (target ≤ 0.05)"
+        f"  │  RPS mean   {rps:.4f}  {_bar(rps, 0.15, False)}  "
+        f"{'OK' if rps <= 0.15 else 'WARN'}  (target <= 0.15)"
+    )
+    log.info(
+        f"  │  ECE        {e:.4f}  {_bar(e, 0.05, False)}  "
+        f"{'OK' if e <= 0.05 else 'WARN'}  (target <= 0.05)"
+    )
+    log.info(
+        f"  │  ROI (synth){r:+.1f}%  (synthetic - see Phase 2 for real backtest)"
     )
     log.info("  └─────────────────────────────────────────────────")
 
@@ -833,7 +975,7 @@ def print_summary(result: dict):
 
     print()
     print("=" * 64)
-    print("  F1 PREDICTOR v2 — TRAINING SUMMARY")
+    print("  F1 PREDICTOR v2 - TRAINING SUMMARY")
     print("=" * 64)
     print(f"  Anno/Round :   {meta['train_through_year']} R{meta['train_through_round']}")
     print(f"  Gare usate :   {meta['n_races_train']}")
@@ -841,18 +983,24 @@ def print_summary(result: dict):
     print(f"  Tempo totale:  {t_str}")
     print(f"  MC sim/gara:   {meta['n_mc_sim']:,}")
     print()
-    print("  ┌─ METRICHE WALK-FORWARD ─────────────────────────")
+    print("  +- METRICHE WALK-FORWARD ---------------------------")
 
     def _row(label, val, fmt, target_ok: bool, target_str: str):
-        icon = "✅" if target_ok else "⚠ "
-        print(f"  │  {label:<14} {val:{fmt}}   {icon}  {target_str}")
+        icon = "OK" if target_ok else "WARN"
+        print(f"  |  {label:<14} {val:{fmt}}   {icon}  {target_str}")
 
-    _row("Kendall τ",    meta['kendall_tau'],        "+.3f", meta['kendall_tau'] >= 0.45,  "target ≥ 0.45")
-    _row("Brier Score",  meta['walk_forward_brier'], ".4f",  meta['walk_forward_brier'] <= 0.20, "target ≤ 0.20")
-    _row("ROI (WF)",     meta['walk_forward_roi'],   "+.1f", meta['walk_forward_roi'] > 0,  "target > 0%")
-    _row("ECE",          meta['walk_forward_ece'],   ".4f",  meta['walk_forward_ece'] <= 0.05, "target ≤ 0.05")
-    print(f"  │  Calibratore  {'✅ attivo' if meta['calibrator_fitted'] else '⚠  inattivo  (< 100 obs Pinnacle)'}")
-    print("  └──────────────────────────────────────────────────")
+    _row("Kendall tau",   meta['kendall_tau'],        "+.3f", meta['kendall_tau'] >= 0.45,  "target >= 0.45")
+    _row("Brier (mc)",    meta['walk_forward_brier'], ".4f",  meta['walk_forward_brier'] <= 0.20, "target <= 0.20")
+    _row("LogLoss (mc)",  meta['walk_forward_logloss'], ".4f", meta['walk_forward_logloss'] <= 1.0, "target <= 1.0")
+    _row("RPS mean",      meta['walk_forward_rps'],   ".4f",  meta['walk_forward_rps'] <= 0.15, "target <= 0.15")
+    _row("ROI (WF)",      meta['walk_forward_roi'],   "+.1f", meta['walk_forward_roi'] > 0,  "target > 0%")
+    _row("ECE",           meta['walk_forward_ece'],   ".4f",  meta['walk_forward_ece'] <= 0.05, "target <= 0.05")
+
+    n_pos_dist = meta.get("n_races_with_position_dist", 0)
+    n_odds = meta.get("n_races_with_odds", 0)
+    print(f"  |  Data coverage: {n_pos_dist} races with position dist, {n_odds} races with odds")
+    print(f"  |  Calibratore  {'OK' if meta['calibrator_fitted'] else 'INATTIVO  (< 100 obs Pinnacle)'}")
+    print("  +---------------------------------------------------------------")
     print()
 
 

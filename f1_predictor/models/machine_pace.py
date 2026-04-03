@@ -289,7 +289,7 @@ class MachinePaceModel:
         constructor_ref: str,
         race_id: int,
         observed_pace: float,
-        circuit: CircuitSpeedProfile,
+        circuit: Optional[CircuitSpeedProfile] = None,
     ) -> MachinePaceEstimate:
         """
         Aggiorna il filtro con una nuova osservazione di pace.
@@ -298,11 +298,20 @@ class MachinePaceModel:
             constructor_ref: es. 'red_bull', 'mercedes'
             race_id:         ID gara (per history)
             observed_pace:   pace relativo al campo (s/lap, negativo = piu veloce)
-            circuit:         profilo cinematico del circuito
+            circuit:         profilo cinematico del circuito (opzionale)
 
         Returns:
             MachinePaceEstimate dopo l'update.
         """
+        if circuit is None:
+            circuit = CircuitSpeedProfile(
+                circuit_ref="generic",
+                speed_factor=1.0,
+                continuous_pct=0.5,
+                throttle_pct=0.5,
+                source="dummy",
+            )
+
         state = self._get_or_init_state(constructor_ref)
         x, P  = state["x"], state["P"]
 

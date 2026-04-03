@@ -38,6 +38,7 @@ from f1_predictor.calibration.isotonic import PinnacleCalibrationLayer
 from f1_predictor.calibration.edge_tracker import BetaBinomialEdgeTracker
 from f1_predictor.validation.backtesting import BettingBacktester, BacktestConfig
 from f1_predictor.reports.edge_report import EdgeReportGenerator
+from f1_predictor.data.circuit_profiles import get_profile_safe
 
 # TASK 5.1 — Feature storiche
 try:
@@ -111,11 +112,18 @@ class F1PredictionPipeline:
         race_meta = {}
 
         for race_dict in historical_races:
-            race_id = race_dict.get("race_id")
+            race_id = race_dict.get("race_id", 0)
             year = race_dict.get("year")
             circuit_type = race_dict.get("circuit_type")
+            circuit_ref = race_dict.get("circuit_ref", "")
 
             race_meta[race_id] = {"circuit_type": circuit_type, "year": year}
+
+            # Get circuit profile for Kalman filter
+            try:
+                circuit = get_profile_safe(circuit_ref)
+            except Exception:
+                circuit = None
 
             # Build RaceResult objects for Layer 1a
             for r in race_dict.get("results", []):
@@ -134,7 +142,7 @@ class F1PredictionPipeline:
             # Update machine pace (Layer 1b)
             pace_obs = race_dict.get("constructor_pace_observations", {})
             for constructor_ref, observed_pace in pace_obs.items():
-                self.machine_pace.update(constructor_ref, race_id, observed_pace)
+                self.machine_pace.update(constructor_ref, race_id, observed_pace, circuit)
 
             # Season boundary: apply decay
             if race_dict.get("is_season_end"):
@@ -194,7 +202,12 @@ class F1PredictionPipeline:
             constructor = entry.get("constructor_ref", "unknown")
 
             skill = self.driver_skill.get_rating(code, race.circuit.circuit_type)
-            pace = self.machine_pace.get_estimate(constructor, race.race_id)
+
+            try:
+                circuit_profile = get_profile_safe(race.circuit.ref)
+            except Exception:
+                circuit_profile = None
+            pace = self.machine_pace.get_estimate(constructor, circuit_profile, race.race_id)
 
             di = DriverRaceInput(
                 driver_code=code,

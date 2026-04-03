@@ -1,0 +1,109 @@
+09:48:30  INFO      \u250c\u2500[1/7] \u2588\u2591\u2591\u2591\u2591\u2591\u2591  Caricamento dati  2022–2024  R5
+\u2502  ETA questo step: ~3s  |  Trascorso totale: 0.0s
+09:48:30  INFO      [DataLoader] Loading [2022, 2023, 2024] via Jolpica...
+09:48:30  INFO        [2022] 5/22 rounds processed
+09:48:30  INFO        [2022] 10/22 rounds processed
+09:48:30  INFO        [2022] 15/22 rounds processed
+09:48:30  INFO        [2022] 20/22 rounds processed
+09:48:30  INFO        [2022] 22/22 rounds processed
+09:48:30  INFO      [Jolpica] Season 2022: 22 races loaded
+09:48:30  INFO        [2023] 5/22 rounds processed
+09:48:30  INFO        [2023] 10/22 rounds processed
+09:48:30  INFO        [2023] 15/22 rounds processed
+09:48:30  INFO        [2023] 20/22 rounds processed
+09:48:30  INFO        [2023] 22/22 rounds processed
+09:48:30  INFO      [Jolpica] Season 2023: 22 races loaded
+09:48:30  INFO        [2024] 5/5 rounds processed
+09:48:30  INFO      [Jolpica] Season 2024: 5 races loaded
+09:48:30  INFO      [DataLoader] Enriching with Kaggle pace data...
+09:48:30  INFO      [KaggleLoader] Caricamento dati Kaggle...
+09:48:31  INFO      [KaggleLoader] Dati Kaggle caricati con successo
+09:48:31  INFO      [KaggleLoader] Arricchite 49/49 gare con dati pace
+09:48:31  INFO      [DataLoader] Pronte 49 gare (49 con pace data) per training
+09:48:31  INFO      \u2514\u2500 \u2713 completato in 1.2s  49 gare  (2022–2024)
+09:48:31  INFO      \u250c\u2500[2/7] \u2588\u2588\u2591\u2591\u2591\u2591\u2591  Inizializzazione F1PredictionPipeline (4 layer)
+\u2502  ETA questo step: ~1s  |  Trascorso totale: 1.2s
+09:48:31  INFO      \u2514\u2500 \u2713 completato in 0.0s  MC=1,000 sim
+09:48:31  INFO      \u250c\u2500[3/7] \u2588\u2588\u2588\u2591\u2591\u2591\u2591  Walk-forward validation  train:2022–2022  val:2023–2024  (27 gare di test)
+\u2502  ETA questo step: ~36s  |  Trascorso totale: 1.2s
+09:48:32  INFO        [WF] Avvio loop su 27 gare di test (2023–2024) | MC/gara=1,000 | train_races=22 | durata stimata ~0-1 min
+09:48:39  INFO        [WF]   1/27 | 2023 R01 Bahrain Grand Prix    |   6.2s | tau(5)=0.105 brier(5)=0.1704 | elapsed=0m06s ETA=2m41s
+09:48:45  INFO        [WF]   2/27 | 2023 R02 Saudi Arabian Grand Pr |   6.0s | tau(5)=0.289 brier(5)=0.3613 | elapsed=0m12s ETA=2m32s
+09:48:51  INFO        [WF]   3/27 | 2023 R03 Australian Grand Prix |   6.2s | tau(5)=0.305 brier(5)=0.2799 | elapsed=0m18s ETA=2m27s
+09:48:57  INFO        [WF]   4/27 | 2023 R04 Azerbaijan Grand Prix |   6.1s | tau(5)=0.389 brier(5)=0.4025 | elapsed=0m24s ETA=2m20s
+09:49:04  INFO        [WF]   5/27 | 2023 R05 Miami Grand Prix      |   6.8s | tau(5)=0.457 brier(5)=0.3649 | elapsed=0m31s ETA=2m17s
+09:49:10  INFO        [WF]   6/27 | 2023 R06 Monaco Grand Prix     |   6.8s | tau(5)=0.501 brier(5)=0.3645 | elapsed=0m38s ETA=2m13s
+09:49:17  INFO        [WF]   7/27 | 2023 R07 Spanish Grand Prix    |   6.8s | tau(5)=0.558 brier(5)=0.2731 | elapsed=0m44s ETA=2m08s
+09:49:24  INFO        [WF]   8/27 | 2023 R08 Canadian Grand Prix   |   6.8s | tau(5)=0.596 brier(5)=0.2688 | elapsed=0m51s ETA=2m02s
+09:49:31  INFO        [WF]   9/27 | 2023 R09 Austrian Grand Prix   |   6.6s | tau(5)=0.581 brier(5)=0.1338 | elapsed=0m58s ETA=1m56s
+09:49:37  INFO        [WF]  10/27 | 2023 R10 British Grand Prix    |   6.7s | tau(5)=0.520 brier(5)=0.1098 | elapsed=1m04s ETA=1m50s
+09:49:44  INFO        [WF]  11/27 | 2023 R11 Hungarian Grand Prix  |   6.8s | tau(5)=0.577 brier(5)=0.0942 | elapsed=1m11s ETA=1m44s
+09:49:51  INFO        [WF]  12/27 | 2023 R12 Belgian Grand Prix    |   6.6s | tau(5)=0.522 brier(5)=0.0936 | elapsed=1m18s ETA=1m38s
+09:49:57  INFO        [WF]  13/27 | 2023 R13 Dutch Grand Prix      |   6.6s | tau(5)=0.491 brier(5)=0.0948 | elapsed=1m25s ETA=1m31s
+09:50:04  INFO        [WF]  14/27 | 2023 R14 Italian Grand Prix    |   6.6s | tau(5)=0.501 brier(5)=0.0950 | elapsed=1m31s ETA=1m25s
+09:50:11  INFO        [WF]  15/27 | 2023 R15 Singapore Grand Prix  |   6.7s | tau(5)=0.497 brier(5)=0.2676 | elapsed=1m38s ETA=1m18s
+09:50:18  INFO        [WF]  16/27 | 2023 R16 Japanese Grand Prix   |   6.9s | tau(5)=0.461 brier(5)=0.2693 | elapsed=1m45s ETA=1m12s
+09:50:25  INFO        [WF]  17/27 | 2023 R17 Qatar Grand Prix      |   7.1s | tau(5)=0.457 brier(5)=0.2694 | elapsed=1m52s ETA=1m06s
+09:50:32  INFO        [WF]  18/27 | 2023 R18 United States Grand Pr |   7.0s | tau(5)=0.411 brier(5)=0.2671 | elapsed=1m59s ETA=0m59s
+09:50:38  INFO        [WF]  19/27 | 2023 R19 Mexico City Grand Prix |   6.8s | tau(5)=0.356 brier(5)=0.2666 | elapsed=2m06s ETA=0m53s
+09:50:45  INFO        [WF]  20/27 | 2023 R20 São Paulo Grand Prix  |   6.7s | tau(5)=0.333 brier(5)=0.0929 | elapsed=2m12s ETA=0m46s
+09:50:52  INFO        [WF]  21/27 | 2023 R21 Las Vegas Grand Prix  |   6.7s | tau(5)=0.335 brier(5)=0.0907 | elapsed=2m19s ETA=0m39s
+09:50:59  INFO        [WF]  22/27 | 2023 R22 Abu Dhabi Grand Prix  |   6.8s | tau(5)=0.364 brier(5)=0.0901 | elapsed=2m26s ETA=0m33s
+09:51:05  INFO        [WF]  23/27 | 2024 R01 Bahrain Grand Prix    |   6.8s | tau(5)=0.478 brier(5)=0.0896 | elapsed=2m33s ETA=0m26s
+09:51:12  INFO        [WF]  24/27 | 2024 R02 Saudi Arabian Grand Pr |   6.5s | tau(5)=0.520 brier(5)=0.1020 | elapsed=2m39s ETA=0m19s
+09:51:18  INFO        [WF]  25/27 | 2024 R03 Australian Grand Prix |   6.5s | tau(5)=0.471 brier(5)=0.2776 | elapsed=2m46s ETA=0m13s
+09:51:25  INFO        [WF]  26/27 | 2024 R04 Japanese Grand Prix   |   6.7s | tau(5)=0.450 brier(5)=0.4527 | elapsed=2m52s ETA=0m06s
+09:51:32  INFO        [WF]  27/27 | 2024 R05 Chinese Grand Prix    |   6.7s | tau(5)=0.400 brier(5)=0.6234 | elapsed=2m59s ETA=0m00s
+09:51:32  INFO        [WF] 27 gare valutate | \u03c4=0.448 | Brier=0.2767 | ROI=+0.0% | ECE=0.0149
+09:51:32  INFO      \u2514\u2500 \u2713 completato in 3.0m  [+145s vs ETA]  27 gare valutate
+09:51:32  INFO        \u250c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+09:51:32  INFO        \u2502  Metriche walk-forward  (27 gare valutate)
+09:51:32  INFO        \u251c\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+09:51:32  INFO        \u2502  Kendall \u03c4   +0.448  \u2593\u2593\u2593\u2593\u2593\u2593\u2593\u2593\u2593\u2591  \u26a0 WARN  (target \u2265 0.45)
+09:51:32  INFO        \u2502  Brier Score 0.2767  \u2593\u2593\u2593\u2593\u2593\u2593\u2593\u2591\u2591\u2591  \u26a0 WARN  (target \u2264 0.20)
+09:51:32  INFO        \u2502  ROI (WF)    +0.0%  \u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591\u2591  \u26a0 WARN  (target > 0%)
+09:51:32  INFO        \u2502  ECE         0.0149  \u2593\u2593\u2593\u2593\u2593\u2593\u2593\u2593\u2593\u2593  \u2705 OK  (target \u2264 0.05)
+09:51:32  INFO        \u2514\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+09:51:32  INFO      \u250c\u2500[4/7] \u2588\u2588\u2588\u2588\u2591\u2591\u2591  Fit finale su tutti i 49 gare  (TTT + Kalman)
+\u2502  ETA questo step: ~10s  |  Trascorso totale: 3.0m
+09:51:34  INFO      \u2514\u2500 \u2713 completato in 2.5s  [-7s vs ETA]
+09:51:34  INFO      \u250c\u2500[5/7] \u2588\u2588\u2588\u2588\u2588\u2591\u2591  Fit Ridge ensemble  (alpha=10.0)
+\u2502  ETA questo step: ~2s  |  Trascorso totale: 3.1m
+09:51:34  INFO      \u2514\u2500 \u2713 completato in 0.0s
+09:51:34  WARNING   THE_ODDS_API_KEY non impostata. Fetch API non disponibile.
+09:51:34  INFO      [OddsLoader] Caricati 0 records totali
+09:51:34  INFO      \u250c\u2500[6/7] \u2588\u2588\u2588\u2588\u2588\u2588\u2591  Isotonic Calibrator  [0/100 obs]
+\u2502  ETA questo step: ~5s  |  Trascorso totale: 3.1m
+09:51:34  INFO      \u2502  \u26a0 SKIPPED — mancano 100 osservazioni Pinnacle.
+\u2502    Esegui: python scripts/collect_odds.py  prima di ogni GP
+\u2502    Layer 4 si attiverà automaticamente al raggiungimento di 100 obs.
+09:51:34  INFO      \u2514\u2500 \u2713 completato in 0.0s  [-5s vs ETA]  skipped
+09:51:34  INFO      \u250c\u2500[7/7] \u2588\u2588\u2588\u2588\u2588\u2588\u2588  Serializzazione artefatti \u2192 MongoDB
+\u2502  ETA questo step: ~2s  |  Trascorso totale: 3.1m
+09:51:34  INFO      \u2514\u2500 \u2713 completato in 0.0s
+09:51:34  INFO      
+  \u23f1  Tempo totale: 3.1m  |  Gare: 49  |  MC sim: 1,000
+
+================================================================
+  F1 PREDICTOR v2 — TRAINING SUMMARY
+================================================================
+  Anno/Round :   2024 R5
+  Gare usate :   49
+  Fonti dati :   jolpica_cache, tracinginsights_csv
+  Tempo totale:  3.1m
+  MC sim/gara:   1,000
+
+Traceback (most recent call last):
+  File "C:\Users\gabri\Documents\proj\f1_predictor\train_pipeline.py", line 929, in <module>
+    main()
+    ~~~~^^
+  File "C:\Users\gabri\Documents\proj\f1_predictor\train_pipeline.py", line 907, in main
+    print_summary(result)
+    ~~~~~~~~~~~~~^^^^^^^^
+  File "C:\Users\gabri\Documents\proj\f1_predictor\train_pipeline.py", line 844, in print_summary
+    print("  \u250c\u2500 METRICHE WALK-FORWARD \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500")
+    ~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Python314\Lib\encodings\cp1252.py", line 19, in encode
+    return codecs.charmap_encode(input,self.errors,encoding_table)[0]
+           ~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+UnicodeEncodeError: 'charmap' codec can't encode characters in position 2-3: character maps to <undefined>
