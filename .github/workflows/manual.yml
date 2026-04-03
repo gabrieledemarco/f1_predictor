@@ -125,15 +125,8 @@ jobs:
               body: `Kaggle F1 data has been automatically updated.\n\n**Date:** ${new Date().toISOString().split('T')[0]}\n**Branches updated:** ${process.env.BRANCHES || 'main,feat/eval-overhaul'}\n\nPlease review the changes.`,
               labels: ['data-update', 'automated']
             })
-      
-      - name: Send Discord notification on failure
-        if: failure()
-        uses: nthompson/github-action-discord-notification@v1.0.0
-        with:
-          webhook_url: ${{ secrets.DISCORD_WEBHOOK_URL }}
-          message: '❌ Kaggle data update failed! Check logs.'
-      
-      - name: Send Discord notification on success
+       
+      - name: Create GitHub Issue if data updated
         if: success()
         uses: nthompson/github-action-discord-notification@v1.0.0
         with:
