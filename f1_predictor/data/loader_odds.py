@@ -148,10 +148,12 @@ class OddsLoader:
 
     def __init__(self,
                  api_key: Optional[str] = None,
-                 cache_dir: str = "data/pinnacle_odds"):
+                 cache_dir: str = "data/pinnacle_odds",
+                 db=None):
         self.api_key = api_key or os.environ.get("THE_ODDS_API_KEY", "")
         self.cache_dir = Path(cache_dir)
         self.cache_dir.mkdir(parents=True, exist_ok=True)
+        self.db = db           # MongoDB connection (None = JSONL-only)
         self._session = None
 
         if not self.api_key:
@@ -246,27 +248,108 @@ class OddsLoader:
     # Public API — Storage
     # ------------------------------------------------------------------
 
-    def save_records(self, records: list[dict], filepath: str) -> None:
-        """Salva records come JSONL (una riga per record)."""
-        path = Path(filepath)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        with open(path, "a", encoding="utf-8") as f:
-            for rec in records:
-                f.write(json.dumps(rec, ensure_ascii=False, default=str) + "\n")
-        log.info(f"[OddsLoader] Salvati {len(records)} records in {path}")
-
-    def load_saved_records(self, directory: Optional[str] = None) -> list[dict]:
+    def save_records(self, records: list[dict],
+                     filepath: Optional[str] = None,
+                     db=None) -> None:
         """
-        Carica tutti i JSONL salvati da una directory.
+        Salva records su MongoDB (upsert) e/o JSONL su disco.
+
+        Args:
+            records:  Lista record da salvare.
+            filepath: Percorso JSONL su disco (opzionale).
+            db:       Connessione MongoDB (override self.db, opzionale).
+        """
+        target_db = db or self.db
+
+        # ── MongoDB upsert ──────────────────────────────────────
+        if target_db is not None:
+            try:
+                from core.db import odds_records_collection
+                coll = odds_records_collection(target_db)
+                inserted = 0
+                skipped = 0
+                for rec in records:
+                    filter_key = {
+                        "race_id":     rec.get("race_id"),
+                        "driver_code": rec.get("driver_code"),
+                        "market":      rec.get("market"),
+                        "timestamp":   rec.get("timestamp"),
+                    }
+                    result = coll.update_one(filter_key, {"$setOnInsert": rec}, upsert=True)
+                    if result.upserted_id:
+                        inserted += 1
+                    else:
+                        skipped += 1
+                log.info(
+                    f"[OddsLoader] MongoDB: {inserted} inseriti, "
+                    f"{skipped} già presenti"
+                )
+            except Exception as exc:
+                log.warning(f"[OddsLoader] MongoDB save fallita: {exc}")
+
+        # ── JSONL su disco con dedup ─────────────────────────────
+        if filepath is not None:
+            path = Path(filepath)
+            path.parent.mkdir(parents=True, exist_ok=True)
+
+            existing_keys: set[tuple] = set()
+            if path.exists():
+                for existing in self._load_jsonl(path):
+                    existing_keys.add((
+                        existing.get("race_id"),
+                        existing.get("driver_code"),
+                        existing.get("market"),
+                        existing.get("timestamp"),
+                    ))
+
+            new_records = [
+                r for r in records
+                if (r.get("race_id"), r.get("driver_code"),
+                    r.get("market"),  r.get("timestamp")) not in existing_keys
+            ]
+
+            if new_records:
+                with open(path, "a", encoding="utf-8") as f:
+                    for rec in new_records:
+                        f.write(json.dumps(rec, ensure_ascii=False, default=str) + "\n")
+                log.info(
+                    f"[OddsLoader] JSONL: {len(new_records)}/{len(records)} "
+                    f"nuovi record → {path.name}"
+                )
+            else:
+                log.info(f"[OddsLoader] JSONL: nessun record nuovo (tutti già presenti)")
+
+    def load_saved_records(self, directory: Optional[str] = None,
+                           db=None) -> list[dict]:
+        """
+        Carica tutti gli OddsRecord da MongoDB o da JSONL su disco.
+
+        Args:
+            directory: Directory JSONL (fallback se MongoDB non disponibile).
+            db:        Connessione MongoDB (override self.db).
 
         Returns:
-            Lista di OddsRecord dict ordinata per timestamp.
+            Lista di OddsRecord dict ordinata per timestamp desc.
         """
+        target_db = db or self.db
+
+        # ── MongoDB primary ──────────────────────────────────────
+        if target_db is not None:
+            try:
+                from core.db import odds_records_collection
+                coll = odds_records_collection(target_db)
+                records = list(coll.find({}, {"_id": 0}).sort("timestamp", -1))
+                log.info(f"[OddsLoader] MongoDB: caricati {len(records)} records")
+                return records
+            except Exception as exc:
+                log.warning(f"[OddsLoader] MongoDB load fallita: {exc} — fallback JSONL")
+
+        # ── Fallback JSONL ───────────────────────────────────────
         search_dir = Path(directory) if directory else self.cache_dir
         all_records = []
         for path in sorted(search_dir.glob("*.jsonl")):
             all_records.extend(self._load_jsonl(path))
-        log.info(f"[OddsLoader] Caricati {len(all_records)} records totali")
+        log.info(f"[OddsLoader] JSONL: caricati {len(all_records)} records totali")
         return all_records
 
     def build_calibration_records(self,

@@ -149,8 +149,18 @@ def save_records(records: list[dict], out_dir: Path) -> Path:
     return fname
 
 
-def count_existing_records(out_dir: Path) -> int:
-    """Conta il totale di osservazioni gia' salvate (per monitorare soglia 100)."""
+def count_existing_records(out_dir: Path, db=None) -> int:
+    """Conta il totale di osservazioni gia' salvate (MongoDB o JSONL su disco)."""
+    if db is not None:
+        try:
+            import sys
+            from pathlib import Path as _Path
+            sys.path.insert(0, str(_Path(__file__).parent.parent))
+            from core.db import odds_records_collection
+            return odds_records_collection(db).count_documents({})
+        except Exception:
+            pass
+
     total = 0
     for jsonl_file in out_dir.glob("*.jsonl"):
         try:
@@ -159,6 +169,38 @@ def count_existing_records(out_dir: Path) -> int:
         except Exception:
             pass
     return total
+
+
+def save_to_mongo(records: list[dict]) -> int:
+    """
+    Salva records su MongoDB odds_records con upsert.
+    Ritorna il numero di nuovi record inseriti.
+    """
+    import sys
+    from pathlib import Path as _Path
+    sys.path.insert(0, str(_Path(__file__).parent.parent))
+
+    from core.db import get_db_direct, odds_records_collection
+
+    db = get_db_direct()
+    if db is None:
+        print("ERROR: MongoDB non raggiungibile. Verifica MONGODB_URI nel .env.")
+        return 0
+
+    coll = odds_records_collection(db)
+    inserted = 0
+    for rec in records:
+        filter_key = {
+            "race_id":     rec.get("race_id", 0),
+            "driver_code": rec.get("driver", ""),
+            "market":      rec.get("market", ""),
+            "timestamp":   rec.get("timestamp", ""),
+        }
+        result = coll.update_one(filter_key, {"$setOnInsert": rec}, upsert=True)
+        if result.upserted_id:
+            inserted += 1
+
+    return inserted
 
 
 def main():
@@ -181,6 +223,11 @@ def main():
         action="store_true",
         help="Scarica sia outrights che h2h (usa 2 richieste API)"
     )
+    parser.add_argument(
+        "--mongo",
+        action="store_true",
+        help="Salva su MongoDB odds_records invece di JSONL su disco"
+    )
     args = parser.parse_args()
 
     api_key = load_api_key()
@@ -200,14 +247,33 @@ def main():
         print("Nessun record scaricato. Verifica connessione o calendario F1.")
         return
 
-    fname = save_records(all_records, out_dir)
-    total_existing = count_existing_records(out_dir)
+    if args.mongo:
+        # ── Salva su MongoDB ──────────────────────────────────────────
+        n_inserted = save_to_mongo(all_records)
+        db_obj = None
+        try:
+            import sys as _sys
+            from pathlib import Path as _Path
+            _sys.path.insert(0, str(_Path(__file__).parent.parent))
+            from core.db import get_db_direct
+            db_obj = get_db_direct()
+        except Exception:
+            pass
+        total_existing = count_existing_records(out_dir, db=db_obj)
 
-    print(f"\n{'='*50}")
-    print(f"  Salvati: {len(all_records)} record → {fname.name}")
-    print(f"  Totale osservazioni in {out_dir}: {total_existing}")
+        print(f"\n{'='*50}")
+        print(f"  Salvati su MongoDB: {n_inserted} nuovi record")
+        print(f"  Totale odds_records su MongoDB: {total_existing}")
+    else:
+        # ── Salva su JSONL ────────────────────────────────────────────
+        fname = save_records(all_records, out_dir)
+        total_existing = count_existing_records(out_dir)
+
+        print(f"\n{'='*50}")
+        print(f"  Salvati: {len(all_records)} record → {fname.name}")
+        print(f"  Totale osservazioni in {out_dir}: {total_existing}")
+
     print()
-
     if total_existing < 100:
         remaining_needed = 100 - total_existing
         print(f"  [Layer 4] {remaining_needed} osservazioni mancanti al target 100.")

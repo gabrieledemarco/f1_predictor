@@ -1,21 +1,23 @@
-name: Update Kaggle F1 Data
+name: Update Kaggle F1 Data [DEPRECATED]
+
+# DEPRECATO — non viene più eseguito.
+#
+# Questo workflow scaricava CSV Kaggle e li committava nel repo Git,
+# causando repo bloat e force-push su branch condivisi.
+#
+# Sostituito da:
+#   - .github/workflows/fetch_data.yml  (Jolpica + Odds → MongoDB)
+#   - .github/workflows/retrain.yml     (clona TracingInsights --depth=1)
+#
+# I dati CSV Kaggle non vengono più tracciati in Git.
+# Per riattivarli in futuro, rimuovere `if: false` dal job.
+
 on:
-  schedule:
-    # Ogni martedì alle 6:00 UTC
-    - cron: '0 6 * * 2'
-  workflow_dispatch:
-    inputs:
-      branches:
-        description: 'Branches to update (comma separated)'
-        required: false
-        default: 'main,feat/eval-overhaul'
-      skip_download:
-        description: 'Skip Kaggle download, just commit existing data'
-        required: false
-        type: boolean
-        default: false
+  workflow_dispatch:  # solo manuale, schedule rimosso
+
 jobs:
   update-data:
+    if: false   # ← DISABILITATO
     runs-on: ubuntu-latest
     permissions:
       contents: write
