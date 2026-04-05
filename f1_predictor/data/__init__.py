@@ -35,6 +35,7 @@ def load_training_data(
     tracinginsights_dir: str = "data/racedata",
     force_refresh: bool = False,
     use_synthetic_fallback: bool = True,
+    db=None,
 ) -> list[dict]:
     """
     Carica i dati di training dalla pipeline completa.
@@ -90,12 +91,18 @@ def load_training_data(
     jolpica = JolpicaLoader(
         cache_dir=jolpica_cache,
         force_refresh=force_refresh,
+        db=db,
     )
 
     try:
         races = jolpica.load_seasons(years, through_round=through_round)
     except Exception as exc:
         log.warning(f"[DataLoader] Jolpica fetch fallito: {exc}")
+        # Non saltare a sintetici se la cache disco esiste — potrebbe essere
+        # un errore parziale su un singolo file. Restituiamo lista vuota.
+        if has_jolpica_cache:
+            log.warning("[DataLoader] Cache disco presente ma fetch fallito — restituisco []")
+            return []
         if use_synthetic_fallback:
             return _load_synthetic_fallback(years, through_round)
         raise
@@ -191,6 +198,8 @@ def _load_synthetic_fallback(years, through_round) -> list[dict]:
         from .adapter import generate_seasons
         years_list = list(years)
         races = generate_seasons(years=years_list, through_round=through_round)
+        for r in races:
+            r["_is_synthetic"] = True
         log.info(f"[DataLoader] Generati {len(races)} race sintetiche per {years_list}")
         return races
     except Exception as exc:

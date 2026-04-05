@@ -29,8 +29,9 @@ def save_model_artifacts(db, artifacts_dict: Dict[str, Any], metadata: Dict[str,
         # Salva ogni artefatto come file separato
         for key, data in artifacts_dict.items():
             filename = f"{version}_{key}.pkl"
-            if fs.exists({"filename": filename}):
-                fs.delete({"filename": filename})
+            existing = fs.find_one({"filename": filename})
+            if existing:
+                fs.delete(existing._id)
             # Serializza i dati in bytes
             serialized_data = pickle.dumps(data)
             fs.put(serialized_data, filename=filename, metadata={"version": version, **metadata})

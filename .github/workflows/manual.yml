@@ -1,0 +1,130 @@
+name: Update Kaggle F1 Data [DEPRECATED]
+
+# DEPRECATO — non viene più eseguito.
+#
+# Questo workflow scaricava CSV Kaggle e li committava nel repo Git,
+# causando repo bloat e force-push su branch condivisi.
+#
+# Sostituito da:
+#   - .github/workflows/fetch_data.yml  (Jolpica + Odds → MongoDB)
+#   - .github/workflows/retrain.yml     (clona TracingInsights --depth=1)
+#
+# I dati CSV Kaggle non vengono più tracciati in Git.
+# Per riattivarli in futuro, rimuovere `if: false` dal job.
+
+on:
+  workflow_dispatch:  # solo manuale, schedule rimosso
+
+jobs:
+  update-data:
+    if: false   # ← DISABILITATO
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GH_TOKEN }}
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      
+      - name: Install Kaggle
+        run: pip install kaggle
+      
+      - name: Configure Kaggle API
+        env:
+          KAGGLE_KEY: ${{ secrets.KAGGLE_KEY }}
+        run: |
+          mkdir -p ~/.kaggle
+          echo '{"username":"${{ secrets.KAGGLE_USERNAME }}","key":"${{ secrets.KAGGLE_KEY }}"}' > ~/.kaggle/kaggle.json
+          chmod 600 ~/.kaggle/kaggle.json
+      
+      - name: Download Kaggle Dataset
+        if: github.event.inputs.skip_download != 'true'
+        run: |
+          cd data/racedata
+          kaggle datasets download -d jtrotman/formula-1-race-data --unzip -o
+          ls -la
+      
+      - name: Verify data exists
+        run: |
+          echo "Checking data/racedata/data/"
+          ls -la data/racedata/data/ | head -20
+          echo "Total files: $(ls -1 data/racedata/data/ | wc -l)"
+      
+      - name: Configure git
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+      
+      - name: Get branches to update
+        id: branches
+        run: |
+          if [ -n "${{ github.event.inputs.branches }}" ]; then
+            echo "branches=${{ github.event.inputs.branches }}" >> $GITHUB_OUTPUT
+          else
+            # Get all local branches
+            echo "branches=main,feat/eval-overhaul" >> $GITHUB_OUTPUT
+          fi
+      
+      - name: Update each branch
+        env:
+          BRANCHES: ${{ steps.branches.outputs.branches }}
+        run: |
+          IFS=',' read -ra BRANCH_ARRAY <<< "$BRANCHES"
+          
+          for branch in "${BRANCH_ARRAY[@]}"; do
+            branch=$(echo $branch | xargs)  # trim whitespace
+            echo "Processing branch: $branch"
+            
+            # Checkout branch
+            git checkout "$branch" || git checkout -b "$branch"
+            
+            # Move data files to correct location if needed
+            if [ -d "data/racedata" ]; then
+              mkdir -p data/racedata/data
+              # Check if files need to be moved from racedata to racedata/data
+              if [ -f "data/racedata/lap_times.csv" ]; then
+                mv data/racedata/*.csv data/racedata/data/ 2>/dev/null || true
+              fi
+            fi
+            
+            # Stage changes
+            git add data/racedata/
+            
+            # Check if there are changes
+            if git diff --staged --quiet; then
+              echo "No changes in $branch, skipping"
+              git checkout main
+              continue
+            fi
+            
+            # Commit
+            commit_message="chore: update Kaggle F1 data $(date +%Y-%m-%d)"
+            git commit -m "$commit_message" || echo "Nothing to commit"
+            
+            # Push
+            git push origin "$branch" --force || echo "Push failed for $branch"
+            
+            # Return to main
+            git checkout main
+          done
+      
+      - name: Create GitHub Issue if data updated
+        if: success()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: '📊 Kaggle F1 Data Updated',
+              body: `Kaggle F1 data has been automatically updated.\n\n**Date:** ${new Date().toISOString().split('T')[0]}\n**Branches updated:** ${process.env.BRANCHES || 'main,feat/eval-overhaul'}\n\nPlease review the changes.`,
+              labels: ['data-update', 'automated']
+            })
+      
