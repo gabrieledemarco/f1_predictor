@@ -39,7 +39,7 @@ jobs:
     timeout-minutes: 90
 
     steps:
-      # ── Setup ──────────────────────────────────────────────
+      # ── Setup ──────────────────────────────────────────────────
       - name: Checkout repository
         uses: actions/checkout@v4
 
@@ -54,34 +54,56 @@ jobs:
           pip install --upgrade pip
           pip install scikit-learn scipy numpy pandas pymongo[srv] requests
 
-      # ── Dati storici ────────────────────────────────────────
+      # ── Dati storici ──────────────────────────────────────────────
       - name: Clone TracingInsights RaceData
         run: |
           git clone --depth=1 https://github.com/TracingInsights/RaceData.git data/racedata
           echo "RaceData clonato: $(find data/racedata -name '*.csv' | wc -l) CSV files"
 
-      - name: Prepare cache directories
+      - name: Prepare fallback cache directory
+        run: mkdir -p data/cache/jolpica
+
+      - name: Verify MongoDB data availability
+        env:
+          MONGODB_URI: ${{ secrets.MONGODB_URI }}
         run: |
-          mkdir -p data/cache/jolpica
-          mkdir -p data/pinnacle_odds
+          python - << 'EOF'
+          import os, sys
+          uri = os.environ.get("MONGODB_URI")
+          if not uri:
+              print("WARNING: MONGODB_URI non configurata — training userà cache disco o sintetici")
+              sys.exit(0)
+          try:
+              from pymongo import MongoClient
+              client = MongoClient(uri, serverSelectionTimeoutMS=5000)
+              db_name = os.environ.get("MONGO_DB", "betbreaker")
+              db = client[db_name]
+              n = db["jolpica_cache"].count_documents({"year": {"$gte": 2019}})
+              print(f"[{db_name}] jolpica_cache: {n} documenti disponibili (anni 2019+)")
+              if n < 50:
+                  print("WARNING: pochi dati in MongoDB.")
+                  print("Consiglio: esegui il workflow 'Fetch & Store F1 Data' prima del retrain.")
+          except Exception as e:
+              print(f"MongoDB check fallito: {e} — training continuerà con cache disco")
+          EOF
 
       # ── Raccolta odds (opzionale, non blocca se fallisce) ──
-      - name: Collect Pinnacle odds
+      - name: Collect Pinnacle odds → MongoDB
         continue-on-error: true
         env:
           THE_ODDS_API_KEY: ${{ secrets.THE_ODDS_API_KEY }}
+          MONGODB_URI: ${{ secrets.MONGODB_URI }}
         run: |
           if [ -n "$THE_ODDS_API_KEY" ]; then
-            python scripts/collect_odds.py --all-markets
+            python scripts/collect_odds.py --all-markets --mongo
           else
             echo "THE_ODDS_API_KEY non configurata — odds skipped"
           fi
 
-      # ── Training ────────────────────────────────────────────
+      # ── Training ────────────────────────────────────────────────────
       - name: Determine training parameters
         id: params
         run: |
-          # Se triggered da schedule, usa anno corrente e round 1 come fallback
           YEAR="${{ github.event.inputs.year || '2026' }}"
           ROUND="${{ github.event.inputs.through_round || '1' }}"
           DRY="${{ github.event.inputs.dry_run || 'false' }}"
@@ -111,7 +133,7 @@ jobs:
             --ridge-alpha 10.0 \
             $DRY_FLAG
 
-      # ── Report ──────────────────────────────────────────────
+      # ── Report ────────────────────────────────────────────────────
       - name: List model versions
         if: ${{ steps.params.outputs.dry_run == 'false' }}
         env:
@@ -161,14 +183,15 @@ jobs:
                   sys.exit(0)
 
               client = MongoClient(uri, serverSelectionTimeoutMS=5000)
-              db = client["f1_predictor"]
+              db_name = os.environ.get("MONGO_DB", "betbreaker")
+              db = client[db_name]
 
               # Leggi versione piu' recente
-              latest = db["model_artifacts"].find_one(
-                  {}, sort=[("uploaded_at", -1)]
+              latest = db["model_versions"].find_one(
+                  {}, sort=[("created_at", -1)]
               )
               if not latest:
-                  print("Nessun artefatto trovato")
+                  print("Nessun artefatto trovato in model_versions")
                   sys.exit(0)
 
               tau   = latest.get("kendall_tau", 0.0)
@@ -180,15 +203,13 @@ jobs:
               print(f"  Brier Score: {brier:.4f}  ({'OK' if brier < 0.25 else 'WARN'})")
               print(f"  Calibratore: {'attivo' if calib else 'non attivo'}")
 
-              # Alert se tau scende sotto soglia minima
               if tau < 0.20:
                   print(f"\nALERT: Kendall tau={tau:.3f} sotto soglia critica (0.20)")
-                  print("Controlla i dati di training e il fix delle metriche.")
-                  sys.exit(1)  # Fa fallire il job → notifica GitHub
+                  sys.exit(1)
 
               print("\nQuality gate: PASS")
 
           except Exception as e:
               print(f"Quality gate error: {e}")
-              sys.exit(0)  # Non bloccare per errori di connessione
+              sys.exit(0)
           EOF
