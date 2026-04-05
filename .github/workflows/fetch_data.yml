@@ -1,0 +1,169 @@
+name: Fetch & Store F1 Data
+
+# Popola MongoDB con dati aggiornati:
+#   - Risultati gara da Jolpica API → jolpica_cache
+#   - Quote Pinnacle da The Odds API → odds_records
+#
+# Trigger:
+#   - Manuale (workflow_dispatch) per aggiornamenti on-demand
+#   - Schedule: venerdì 20:00 UTC (dopo qualifica, prima della gara)
+#   - Può essere rilanciato dopo ogni GP inserendo year + round corretti
+
+on:
+  workflow_dispatch:
+    inputs:
+      year:
+        description: "Anno corrente (es. 2026)"
+        required: true
+        default: "2026"
+      from_round:
+        description: "Primo round da scaricare (default: 1)"
+        required: false
+        default: "1"
+      to_round:
+        description: "Ultimo round da scaricare (default: 24)"
+        required: false
+        default: "24"
+      skip_odds:
+        description: "Salta raccolta quote Pinnacle"
+        required: false
+        default: "false"
+        type: choice
+        options: ["false", "true"]
+
+  schedule:
+    # Venerdì 20:00 UTC — dopo qualifica, prima della gara domenicale
+    - cron: "0 20 * * 5"
+
+jobs:
+  # ────────────────────────────────────────────────────────────────────────
+  fetch-jolpica:
+    name: "Fetch Jolpica → MongoDB"
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: pip install requests pymongo[srv] python-dotenv
+
+      - name: Prepare cache directory (fallback disco)
+        run: mkdir -p data/cache/jolpica
+
+      - name: Fetch Jolpica data → MongoDB
+        env:
+          MONGODB_URI: ${{ secrets.MONGODB_URI }}
+        run: |
+          YEAR="${{ github.event.inputs.year || '2026' }}"
+          FROM="${{ github.event.inputs.from_round || '1' }}"
+          TO="${{ github.event.inputs.to_round || '24' }}"
+
+          echo "Fetching anno=$YEAR round=$FROM→$TO"
+          python scripts/fetch_jolpica.py \
+            --year "$YEAR" \
+            --from-round "$FROM" \
+            --to-round "$TO"
+
+  # ────────────────────────────────────────────────────────────────────────
+  collect-odds:
+    name: "Collect Pinnacle Odds → MongoDB"
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # Non blocca fetch-jolpica se fallisce
+    if: ${{ github.event.inputs.skip_odds != 'true' }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: pip install requests pymongo[srv] python-dotenv
+
+      - name: Collect Pinnacle odds → MongoDB
+        continue-on-error: true
+        env:
+          MONGODB_URI: ${{ secrets.MONGODB_URI }}
+          THE_ODDS_API_KEY: ${{ secrets.THE_ODDS_API_KEY }}
+        run: |
+          if [ -n "$THE_ODDS_API_KEY" ]; then
+            echo "Raccolta quote Pinnacle → MongoDB..."
+            python scripts/collect_odds.py --all-markets --mongo
+          else
+            echo "THE_ODDS_API_KEY non configurata — odds collection skipped"
+          fi
+
+  # ────────────────────────────────────────────────────────────────────────
+  report:
+    name: "Data Availability Report"
+    runs-on: ubuntu-latest
+    needs: [fetch-jolpica, collect-odds]
+    if: always()
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install pymongo[srv]
+
+      - name: Report MongoDB data availability
+        env:
+          MONGODB_URI: ${{ secrets.MONGODB_URI }}
+        run: |
+          python - << 'EOF'
+          import os, sys
+          uri = os.environ.get("MONGODB_URI")
+          if not uri:
+              print("MONGODB_URI non configurata — report skipped")
+              sys.exit(0)
+
+          try:
+              from pymongo import MongoClient
+              client = MongoClient(uri, serverSelectionTimeoutMS=5000)
+              db = client[os.environ.get("MONGO_DB", "betbreaker")]
+
+              jolpica_total = db["jolpica_cache"].count_documents({})
+              odds_total    = db["odds_records"].count_documents({})
+
+              # Conta per anno
+              jolpica_by_year = {}
+              for doc in db["jolpica_cache"].aggregate([
+                  {"$group": {"_id": "$year", "count": {"$sum": 1}}},
+                  {"$sort": {"_id": 1}},
+              ]):
+                  jolpica_by_year[doc["_id"]] = doc["count"]
+
+              print("\n" + "=" * 55)
+              print("  MongoDB Data Availability Report")
+              print("=" * 55)
+              print(f"  jolpica_cache : {jolpica_total} documenti totali")
+              for year, count in jolpica_by_year.items():
+                  print(f"    {year}: {count} documenti")
+              print(f"  odds_records  : {odds_total} documenti totali")
+              layer4_status = "ATTIVO" if odds_total >= 100 else f"IN ACCUMULO ({odds_total}/100)"
+              print(f"  Layer 4       : {layer4_status}")
+              print("=" * 55 + "\n")
+
+          except Exception as e:
+              print(f"Errore connessione MongoDB: {e}")
+              sys.exit(0)
+          EOF
