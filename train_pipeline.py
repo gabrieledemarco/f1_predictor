@@ -179,6 +179,17 @@ def run_training(args) -> dict:
         suffix = f"  {extra}" if extra else ""
         log.info(f"└─ ✓ completato in {_fmt_elapsed(dur)}{diff_str}{suffix}")
 
+    # ── Connessione MongoDB (opzionale — fallback cache disco) ───────
+    try:
+        from core.db import get_db_direct
+        db = get_db_direct()
+        if db is not None:
+            log.info(f"[Pipeline] MongoDB connesso: {db.name}")
+        else:
+            log.info("[Pipeline] MongoDB non disponibile — uso cache disco")
+    except Exception:
+        db = None
+
     # ── 1. Carica dati ───────────────────────────────────────────────
     _step_start(1, f"Caricamento dati  {args.train_from}–{args.year}  R{args.through_round}")
     try:
@@ -190,6 +201,7 @@ def run_training(args) -> dict:
             tracinginsights_dir=args.tracing_dir,
             use_synthetic_fallback=True,
             force_refresh=False,
+            db=db,
         )
     except Exception as e:
         log.warning(f"load_training_data fallito ({e}) — uso dati sintetici")
@@ -198,10 +210,19 @@ def run_training(args) -> dict:
             years=list(range(args.train_from, args.year + 1)),
             through_round=args.through_round
         )
+        for r in races:
+            r["_is_synthetic"] = True
 
     if not races:
         log.error("Nessun dato caricato. Impossibile procedere.")
         sys.exit(1)
+
+    n_synthetic = sum(1 for r in races if r.get("_is_synthetic"))
+    if n_synthetic:
+        log.warning(
+            f"[Pipeline] ATTENZIONE: {n_synthetic}/{len(races)} gare SINTETICHE "
+            "nel training set — le predizioni non saranno affidabili."
+        )
 
     _step_done(1, f"{len(races)} gare  ({args.train_from}–{args.year})")
 
@@ -255,7 +276,7 @@ def run_training(args) -> dict:
 
     # ── 6. Isotonic Calibrator ───────────────────────────────────────
     calibrator_info = None
-    odds_records    = _load_odds(args.odds_dir)
+    odds_records    = _load_odds(args.odds_dir, db=db)
     n_obs           = len(odds_records) if odds_records else 0
 
     if odds_records and n_obs >= args.min_calib_obs:
@@ -707,12 +728,12 @@ def _extract_ridge_info(pipeline) -> dict:
         return {"coefs": [], "intercept": 0.0, "feature_names": []}
 
 
-def _load_odds(odds_dir: str) -> list[dict]:
-    """Carica OddsRecord da directory JSONL."""
+def _load_odds(odds_dir: str, db=None) -> list[dict]:
+    """Carica OddsRecord da MongoDB (primary) o directory JSONL (fallback)."""
     try:
         from f1_predictor.data.loader_odds import OddsLoader
-        loader = OddsLoader(cache_dir=odds_dir)
-        return loader.load_saved_records(odds_dir)
+        loader = OddsLoader(cache_dir=odds_dir, db=db)
+        return loader.load_saved_records(directory=odds_dir, db=db)
     except Exception as e:
         log.debug(f"Odds load: {e}")
         return []

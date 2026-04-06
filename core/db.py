@@ -27,6 +27,11 @@ _COLLECTION_PREFIX = "predictions_"
 _LAPTIMES_PREFIX = "lap_times_"
 _DRIVERINFO_PREFIX = "driver_info_"
 _SESSIONSTATS_PREFIX = "session_stats_"
+_JOLPICA_CACHE = "jolpica_cache"
+_ODDS_RECORDS = "odds_records"
+
+# Cache in-memory: evita list_indexes() su Atlas ad ogni accesso
+_indexed_collections: set[str] = set()
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -113,8 +118,9 @@ def collection_for_year(db, year: int):
     """
     coll_name = f"{_COLLECTION_PREFIX}{year}"
     coll = db[coll_name]
-    # Indice univoco — evita duplicati senza logica manuale
-    _ensure_index(coll)
+    if coll_name not in _indexed_collections:
+        _ensure_index(coll)
+        _indexed_collections.add(coll_name)
     return coll
 
 
@@ -138,7 +144,9 @@ def lap_times_collection(db, year: int):
     """
     coll_name = f"{_LAPTIMES_PREFIX}{year}"
     coll = db[coll_name]
-    _ensure_lap_times_index(coll)
+    if coll_name not in _indexed_collections:
+        _ensure_lap_times_index(coll)
+        _indexed_collections.add(coll_name)
     return coll
 
 
@@ -149,7 +157,9 @@ def driver_info_collection(db, year: int):
     """
     coll_name = f"{_DRIVERINFO_PREFIX}{year}"
     coll = db[coll_name]
-    _ensure_driver_info_index(coll)
+    if coll_name not in _indexed_collections:
+        _ensure_driver_info_index(coll)
+        _indexed_collections.add(coll_name)
     return coll
 
 
@@ -160,7 +170,56 @@ def session_stats_collection(db, year: int):
     """
     coll_name = f"{_SESSIONSTATS_PREFIX}{year}"
     coll = db[coll_name]
-    _ensure_session_stats_index(coll)
+    if coll_name not in _indexed_collections:
+        _ensure_session_stats_index(coll)
+        _indexed_collections.add(coll_name)
+    return coll
+
+
+def jolpica_cache_collection(db):
+    """
+    Ritorna la collezione jolpica_cache.
+    Sostituisce i file JSON su disco in data/cache/jolpica/.
+    Indice unico su {year, round, data_type}.
+    """
+    from pymongo import ASCENDING
+    coll = db[_JOLPICA_CACHE]
+    if _JOLPICA_CACHE not in _indexed_collections:
+        existing = {idx["name"] for idx in coll.list_indexes()}
+        if "jolpica_cache_unique" not in existing:
+            coll.create_index(
+                [("year", ASCENDING), ("round", ASCENDING), ("data_type", ASCENDING)],
+                unique=True,
+                name="jolpica_cache_unique",
+                background=True,
+            )
+        _indexed_collections.add(_JOLPICA_CACHE)
+    return coll
+
+
+def odds_records_collection(db):
+    """
+    Ritorna la collezione odds_records.
+    Sostituisce i file JSONL in data/pinnacle_odds/.
+    Indice unico su {race_id, driver_code, market, timestamp}.
+    """
+    from pymongo import ASCENDING
+    coll = db[_ODDS_RECORDS]
+    if _ODDS_RECORDS not in _indexed_collections:
+        existing = {idx["name"] for idx in coll.list_indexes()}
+        if "odds_records_unique" not in existing:
+            coll.create_index(
+                [
+                    ("race_id", ASCENDING),
+                    ("driver_code", ASCENDING),
+                    ("market", ASCENDING),
+                    ("timestamp", ASCENDING),
+                ],
+                unique=True,
+                name="odds_records_unique",
+                background=True,
+            )
+        _indexed_collections.add(_ODDS_RECORDS)
     return coll
 
 

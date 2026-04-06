@@ -146,10 +146,12 @@ class JolpicaLoader:
 
     def __init__(self,
                  cache_dir: str = "data/cache/jolpica",
-                 force_refresh: bool = False):
+                 force_refresh: bool = False,
+                 db=None):
         self.cache_dir = Path(cache_dir)
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         self.force_refresh = force_refresh
+        self.db = db           # MongoDB connection (None = disco-only)
         self._session = None   # lazy init
 
     # ------------------------------------------------------------------
@@ -372,6 +374,29 @@ class JolpicaLoader:
             self._write_cache(cache_key, data)
         return data
 
+    # ------------------------------------------------------------------
+    # Cache key parsing helper
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _parse_cache_key(key: str) -> Optional[tuple[int, int, str]]:
+        """
+        Converte chiave cache in (year, round, data_type).
+        Esempi:
+          "2024_01_results"   → (2024, 1, "results")
+          "2024_01_qualifying"→ (2024, 1, "qualifying")
+          "2024_rounds"       → (2024, 0, "rounds")
+        Ritorna None se il formato non è riconoscibile.
+        """
+        import re
+        m = re.match(r"^(\d{4})_(\d{2})_(results|qualifying)$", key)
+        if m:
+            return int(m.group(1)), int(m.group(2)), m.group(3)
+        m2 = re.match(r"^(\d{4})_rounds$", key)
+        if m2:
+            return int(m2.group(1)), 0, "rounds"
+        return None
+
     def _http_get(self, url: str) -> Optional[dict]:
         """HTTP GET con retry e rate limiting."""
         try:
@@ -418,22 +443,61 @@ class JolpicaLoader:
         return self.cache_dir / f"{key}.json"
 
     def _read_cache(self, key: str) -> Optional[dict]:
+        # 1. Prova MongoDB se disponibile
+        if self.db is not None:
+            parsed = self._parse_cache_key(key)
+            if parsed:
+                year, round_num, data_type = parsed
+                try:
+                    from core.db import jolpica_cache_collection
+                    coll = jolpica_cache_collection(self.db)
+                    doc = coll.find_one(
+                        {"year": year, "round": round_num, "data_type": data_type},
+                        {"_id": 0, "payload": 1},
+                    )
+                    if doc:
+                        return doc["payload"]
+                except Exception as exc:
+                    log.debug(f"MongoDB read cache fallita ({key}): {exc}")
+
+        # 2. Fallback disco
         path = self._cache_path(key)
         if path.exists():
             try:
                 return json.loads(path.read_text(encoding="utf-8"))
             except Exception as exc:
-                log.warning(f"Cache corrotta ({key}): {exc}")
+                log.warning(f"Cache disco corrotta ({key}): {exc}")
         return None
 
     def _write_cache(self, key: str, data: dict) -> None:
+        # 1. Scrivi su MongoDB se disponibile
+        if self.db is not None:
+            parsed = self._parse_cache_key(key)
+            if parsed:
+                year, round_num, data_type = parsed
+                try:
+                    from core.db import jolpica_cache_collection
+                    from datetime import datetime
+                    coll = jolpica_cache_collection(self.db)
+                    coll.update_one(
+                        {"year": year, "round": round_num, "data_type": data_type},
+                        {"$set": {
+                            "payload": data,
+                            "updated_at": datetime.utcnow(),
+                        }},
+                        upsert=True,
+                    )
+                except Exception as exc:
+                    log.warning(f"MongoDB write cache fallita ({key}): {exc}")
+
+        # 2. Scrivi sempre su disco (backup per sviluppo offline)
         try:
             self._cache_path(key).write_text(
                 json.dumps(data, ensure_ascii=False, indent=2),
                 encoding="utf-8"
             )
         except Exception as exc:
-            log.warning(f"Impossibile scrivere cache ({key}): {exc}")
+            log.warning(f"Impossibile scrivere cache disco ({key}): {exc}")
 
     # ------------------------------------------------------------------
     # Utility
