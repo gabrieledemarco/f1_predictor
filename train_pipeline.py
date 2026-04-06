@@ -179,6 +179,17 @@ def run_training(args) -> dict:
         suffix = f"  {extra}" if extra else ""
         log.info(f"└─ ✓ completato in {_fmt_elapsed(dur)}{diff_str}{suffix}")
 
+    # ── Connessione MongoDB (opzionale — fallback cache disco) ───────
+    try:
+        from core.db import get_db_direct
+        db = get_db_direct()
+        if db is not None:
+            log.info(f"[Pipeline] MongoDB connesso: {db.name}")
+        else:
+            log.info("[Pipeline] MongoDB non disponibile — uso cache disco")
+    except Exception:
+        db = None
+
     # ── 1. Carica dati ───────────────────────────────────────────────
     _step_start(1, f"Caricamento dati  {args.train_from}–{args.year}  R{args.through_round}")
     try:
