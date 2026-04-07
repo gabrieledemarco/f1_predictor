@@ -9,3 +9,12 @@ env/
 venv/
 .venv/
 .DS_Store
+
+# Dati runtime — gestiti da MongoDB o fonti esterne, non tracciare in Git
+data/cache/
+data/pinnacle_odds/
+data/racedata/
+
+# Log e file temporanei
+*.log
+*.jsonl
