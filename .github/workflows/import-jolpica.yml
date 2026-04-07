@@ -46,13 +46,12 @@ jobs:
         id: years
         run: |
           CURRENT_YEAR=$(date +%Y)
-          FROM_YEAR="${FROM_YEAR:-2018}"
-          if [ -z "$TO_YEAR" ] || [ "$TO_YEAR" = "" ]; then
-            TO_YEAR="$CURRENT_YEAR"
-          else
-            TO_YEAR="${TO_YEAR}"
+          if [ -z "$FROM_YEAR" ]; then
+            FROM_YEAR="2018"
           fi
-          
+          if [ -z "$TO_YEAR" ]; then
+            TO_YEAR="$CURRENT_YEAR"
+          fi
           echo "from_year=$FROM_YEAR" >> $GITHUB_OUTPUT
           echo "to_year=$TO_YEAR" >> $GITHUB_OUTPUT
         env:
