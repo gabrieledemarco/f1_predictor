@@ -33,11 +33,14 @@ jobs:
         run: pip install pymongo python-dotenv fastf1 scipy numpy pandas
 
       - name: Extract circuit profiles
-        run: python scripts/extract_circuit_profiles.py
+        run: |
+          CURRENT_YEAR=$(date +%Y)
+          YEAR="${INPUT_YEAR:-$CURRENT_YEAR}"
+          python scripts/extract_circuit_profiles.py
         env:
           MONGODB_URI: ${{ secrets.MONGODB_URI }}
           MONGO_DB: ${{ vars.MONGO_DB || 'betbreaker' }}
-          YEAR: ${{ inputs.year || env.CURRENT_YEAR }}
+          INPUT_YEAR: ${{ inputs.year || '' }}
 
   verify-profiles:
     name: Verify Extracted Profiles

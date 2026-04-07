@@ -46,19 +46,18 @@ jobs:
         id: years
         run: |
           CURRENT_YEAR=$(date +%Y)
-          FROM_YEAR=${FROM_YEAR:-${{ inputs.from_year }}
-          TO_YEAR=${TO_YEAR:-${{ inputs.to_year }}
-          
-          if [ -z "$TO_YEAR" ]; then
-            TO_YEAR=$CURRENT_YEAR
+          FROM_YEAR="${FROM_YEAR:-2018}"
+          if [ -z "$TO_YEAR" ] || [ "$TO_YEAR" = "" ]; then
+            TO_YEAR="$CURRENT_YEAR"
+          else
+            TO_YEAR="${TO_YEAR}"
           fi
           
           echo "from_year=$FROM_YEAR" >> $GITHUB_OUTPUT
           echo "to_year=$TO_YEAR" >> $GITHUB_OUTPUT
-          echo "years_range=$(seq $FROM_YEAR $TO_YEAR | tr '\n' ',')" >> $GITHUB_OUTPUT
         env:
-          FROM_YEAR: ${{ inputs.from_year }}
-          TO_YEAR: ${{ inputs.to_year }}
+          FROM_YEAR: ${{ inputs.from_year || '2018' }}
+          TO_YEAR: ${{ inputs.to_year || '' }}
 
       - name: Import races to MongoDB
         run: python scripts/import_jolpica.py

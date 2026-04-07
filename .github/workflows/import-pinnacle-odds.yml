@@ -17,7 +17,7 @@ on:
 env:
   MONGODB_URI: ${{ secrets.MONGODB_URI }}
   MONGO_DB: ${{ vars.MONGO_DB || 'betbreaker' }}
-  ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
+  THE_ODDS_API_KEY: ${{ secrets.THE_ODDS_API_KEY }}
 
 jobs:
   fetch-odds:
@@ -42,7 +42,7 @@ jobs:
         env:
           MONGODB_URI: ${{ secrets.MONGODB_URI }}
           MONGO_DB: ${{ vars.MONGO_DB || 'betbreaker' }}
-          ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
+          THE_ODDS_API_KEY: ${{ secrets.THE_ODDS_API_KEY }}
           MARKETS: ${{ inputs.markets }}
           REGIONS: ${{ inputs.regions }}
 
