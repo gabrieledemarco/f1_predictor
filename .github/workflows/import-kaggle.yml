@@ -1,0 +1,128 @@
+name: Import Kaggle Historical Data
+
+on:
+  workflow_dispatch:
+    inputs:
+      years:
+        description: 'Years to import (comma-separated, e.g., 2018,2019,2020)'
+        required: false
+        default: ''
+      force:
+        description: 'Force re-import'
+        required: false
+        default: 'false'
+  schedule:
+    - cron: '0 4 1 * *'
+
+env:
+  MONGODB_URI: ${{ secrets.MONGODB_URI }}
+  MONGO_DB: ${{ vars.MONGO_DB || 'betbreaker' }}
+  KAGGLE_USERNAME: ${{ secrets.KAGGLE_USERNAME }}
+  KAGGLE_KEY: ${{ secrets.KAGGLE_KEY }}
+
+jobs:
+  download-kaggle:
+    name: Download Kaggle Dataset
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install kagglehub pandas pyarrow
+
+      - name: Configure Kaggle
+        run: |
+          mkdir -p ~/.kaggle
+          echo '{"username":"$KAGGLE_USERNAME","key":"$KAGGLE_KEY"}' > ~/.kaggle/kaggle.json
+          chmod 600 ~/.kaggle/kaggle.json
+
+      - name: Download dataset
+        run: |
+          python -c "
+          import kagglehub
+          path = kagglehub.dataset_download('jtrotman/formula-1-race-data')
+          print(f'Dataset downloaded to: {path}')
+          print(f'::set-output name=path::{path}')
+          " >> $GITHUB_OUTPUT
+        id: download
+        env:
+          KAGGLE_USERNAME: ${{ secrets.KAGGLE_USERNAME }}
+          KAGGLE_KEY: ${{ secrets.KAGGLE_KEY }}
+
+      - name: Extract and move data
+        run: |
+          DATASET_PATH=$(cat $GITHUB_OUTPUT | grep path | cut -d: -f2 | tr -d ' ')
+          mv "$DATASET_PATH"/* data/kaggle_raw/
+          rm -rf "$DATASET_PATH"
+          ls -la data/kaggle_raw/
+
+  import-kaggle:
+    name: Import Kaggle Data to MongoDB
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    needs: download-kaggle
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install pymongo python-dotenv pandas pyarrow numpy
+
+      - name: Import historical laps
+        run: python scripts/import_kaggle.py
+        env:
+          MONGODB_URI: ${{ secrets.MONGODB_URI }}
+          MONGO_DB: ${{ vars.MONGO_DB || 'betbreaker' }}
+          YEARS: ${{ inputs.years }}
+          FORCE: ${{ inputs.force || 'false' }}
+
+  compute-pace-kaggle:
+    name: Compute Kaggle Pace Observations
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: import-kaggle
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install pymongo python-dotenv numpy pandas scipy
+
+      - name: Compute pace observations from Kaggle data
+        run: python scripts/compute_pace_observations.py
+        env:
+          MONGODB_URI: ${{ secrets.MONGODB_URI }}
+          MONGO_DB: ${{ vars.MONGO_DB || 'betbreaker' }}
+          SOURCE: kaggle
+
+  notify:
+    name: Notify on failure
+    runs-on: ubuntu-latest
+    needs: [download-kaggle, import-kaggle, compute-pace-kaggle]
+    if: failure()
+    
+    steps:
+      - name: Create failure summary
+        run: |
+          echo "## Kaggle Import Failed" >> $GITHUB_STEP_SUMMARY
+          echo "Kaggle historical data import failed. Check logs for details." >> $GITHUB_STEP_SUMMARY

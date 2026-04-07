@@ -108,8 +108,8 @@ jobs:
             commit_message="chore: update Kaggle F1 data $(date +%Y-%m-%d)"
             git commit -m "$commit_message" || echo "Nothing to commit"
             
-            # Push
-            git push origin "$branch" --force || echo "Push failed for $branch"
+            # Push (use --force-with-lease for safety)
+            git push origin "$branch" --force-with-lease || echo "Push failed for $branch"
             
             # Return to main
             git checkout main

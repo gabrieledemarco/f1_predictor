@@ -1,0 +1,83 @@
+name: Import Pinnacle Odds
+
+on:
+  workflow_dispatch:
+    inputs:
+      markets:
+        description: 'Markets to fetch (comma-separated: h2h,outrights)'
+        required: false
+        default: 'h2h,outrights'
+      regions:
+        description: 'Regions (comma-separated: eu,uk,us,au)'
+        required: false
+        default: 'eu'
+  schedule:
+    - cron: '0 18 * * 5'
+
+env:
+  MONGODB_URI: ${{ secrets.MONGODB_URI }}
+  MONGO_DB: ${{ vars.MONGO_DB || 'betbreaker' }}
+  ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
+
+jobs:
+  fetch-odds:
+    name: Fetch Odds from The Odds API
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install pymongo python-dotenv requests numpy
+
+      - name: Fetch and store odds
+        run: python scripts/import_pinnacle_odds.py
+        env:
+          MONGODB_URI: ${{ secrets.MONGODB_URI }}
+          MONGO_DB: ${{ vars.MONGO_DB || 'betbreaker' }}
+          ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
+          MARKETS: ${{ inputs.markets }}
+          REGIONS: ${{ inputs.regions }}
+
+  compute-calibration:
+    name: Update Calibration Dataset
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: fetch-odds
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install pymongo python-dotenv numpy pandas
+
+      - name: Compute calibration records
+        run: python scripts/compute_calibration_records.py
+        env:
+          MONGODB_URI: ${{ secrets.MONGODB_URI }}
+          MONGO_DB: ${{ vars.MONGO_DB || 'betbreaker' }}
+
+  notify:
+    name: Notify on failure
+    runs-on: ubuntu-latest
+    needs: [fetch-odds, compute-calibration]
+    if: failure()
+    
+    steps:
+      - name: Create failure summary
+        run: |
+          echo "## Odds Import Failed" >> $GITHUB_STEP_SUMMARY
+          echo "Pinnacle odds import failed. Check logs for details." >> $GITHUB_STEP_SUMMARY

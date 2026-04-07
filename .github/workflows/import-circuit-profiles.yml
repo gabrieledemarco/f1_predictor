@@ -1,0 +1,76 @@
+name: Import Circuit Profiles
+
+on:
+  workflow_dispatch:
+    inputs:
+      year:
+        description: 'Season year to extract profiles for'
+        required: false
+        default: ''
+  schedule:
+    - cron: '0 5 1 12 *'
+
+env:
+  MONGODB_URI: ${{ secrets.MONGODB_URI }}
+  MONGO_DB: ${{ vars.MONGO_DB || 'betbreaker' }}
+
+jobs:
+  extract-profiles:
+    name: Extract Circuit Profiles from FastF1
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install pymongo python-dotenv fastf1 scipy numpy pandas
+
+      - name: Extract circuit profiles
+        run: python scripts/extract_circuit_profiles.py
+        env:
+          MONGODB_URI: ${{ secrets.MONGODB_URI }}
+          MONGO_DB: ${{ vars.MONGO_DB || 'betbreaker' }}
+          YEAR: ${{ inputs.year || env.CURRENT_YEAR }}
+
+  verify-profiles:
+    name: Verify Extracted Profiles
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: extract-profiles
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install pymongo python-dotenv
+
+      - name: Verify profiles in MongoDB
+        run: python scripts/verify_circuit_profiles.py
+        env:
+          MONGODB_URI: ${{ secrets.MONGODB_URI }}
+          MONGO_DB: ${{ vars.MONGO_DB || 'betbreaker' }}
+
+  notify:
+    name: Notify on failure
+    runs-on: ubuntu-latest
+    needs: [extract-profiles, verify-profiles]
+    if: failure()
+    
+    steps:
+      - name: Create failure summary
+        run: |
+          echo "## Circuit Profiles Import Failed" >> $GITHUB_STEP_SUMMARY
+          echo "Circuit profile extraction failed. Check logs for details." >> $GITHUB_STEP_SUMMARY

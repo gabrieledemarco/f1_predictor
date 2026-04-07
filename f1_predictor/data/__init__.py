@@ -1,23 +1,26 @@
 """
-data/__init__.py
-================
-Interfaccia unificata per tutti i loader dati.
+Data Module - Unified Data Loading
 
-Utilizzo tipico in train_pipeline.py:
-    from data import load_training_data, load_calibration_records
+This module provides unified data loading from MongoDB.
+All data is imported via GitHub Actions workflows and stored in MongoDB.
 
-    races = load_training_data(
-        years=range(2019, 2027),
-        through_round=5,
-        jolpica_cache="data/cache/jolpica",
-        tracinginsights_dir="data/racedata",
-    )
-
-    cal_records = load_calibration_records(
-        odds_dir="data/pinnacle_odds",
-        model_predictions={...},
-        outcomes={...},
-    )
+Usage in train_pipeline.py:
+    from data import MongoRaceLoader, MongoPaceLoader, MongoOddsLoader
+    
+    # Get MongoDB connection
+    db = get_db()
+    
+    # Load races
+    race_loader = MongoRaceLoader(db)
+    races = race_loader.load_seasons(years=range(2019, 2027), through_round=5)
+    
+    # Load pace observations
+    pace_loader = MongoPaceLoader(db)
+    pace_obs = pace_loader.load_pace_observations(years=range(2019, 2027))
+    
+    # Load odds
+    odds_loader = MongoOddsLoader(db)
+    odds = odds_loader.load_historical_odds(years=range(2022, 2027))
 """
 
 from __future__ import annotations
@@ -27,181 +30,148 @@ from typing import Optional
 
 log = logging.getLogger(__name__)
 
+# MongoDB Loaders
+from f1_predictor.data.mongo_loader import (
+    MongoRaceLoader,
+    Race,
+    RaceResult,
+    QualifyingResult,
+)
 
-def load_training_data(
+from f1_predictor.data.mongo_pace_loader import (
+    MongoPaceLoader,
+    PaceObservation,
+)
+
+from f1_predictor.data.mongo_odds_loader import (
+    MongoOddsLoader,
+    OddsRecord,
+    CalibrationRecord,
+)
+
+from f1_predictor.data.mongo_circuit_loader import (
+    MongoCircuitProfileLoader,
+    CircuitSpeedProfile,
+    CircuitType,
+    DEFAULT_PROFILES,
+)
+
+
+def get_data_loaders(db):
+    """
+    Returns a tuple of MongoDB data loaders.
+    
+    Usage:
+        db = get_db()
+        race_loader, pace_loader, odds_loader, circuit_loader = get_data_loaders(db)
+    """
+    return (
+        MongoRaceLoader(db),
+        MongoPaceLoader(db),
+        MongoOddsLoader(db),
+        MongoCircuitProfileLoader(db),
+    )
+
+
+def load_training_data_from_mongo(
+    db,
     years: range | list[int] = range(2019, 2027),
     through_round: Optional[int] = None,
-    jolpica_cache: str = "data/cache/jolpica",
-    tracinginsights_dir: str = "data/racedata",
-    force_refresh: bool = False,
-    use_synthetic_fallback: bool = True,
-    db=None,
 ) -> list[dict]:
     """
-    Carica i dati di training dalla pipeline completa.
-
-    Tenta:
-        1. JolpicaLoader → struttura gara, risultati, qualifiche
-        2. TracingInsightsLoader → constructor_pace_observations
-        3. Se nessuna fonte disponibile e use_synthetic_fallback=True → dati sintetici
-
+    Load training data from MongoDB.
+    
     Args:
-        years: Range di stagioni da caricare.
-        through_round: Tronca l'ultima stagione a questo round.
-        jolpica_cache: Directory cache JSON Jolpica.
-        tracinginsights_dir: Directory CSV TracingInsights clonato.
-        force_refresh: Ignora cache e ri-fetcha tutto.
-        use_synthetic_fallback: Se True, usa dati sintetici quando reali non disponibili.
-
-    Returns:
-        Lista di race dict pronti per F1PredictionPipeline.fit().
-    """
-    from .loader_jolpica import JolpicaLoader
-    from .loader_tracinginsights import TracingInsightsLoader
-    from pathlib import Path
-
-    jolpica_cache_path = Path(jolpica_cache)
-    tracing_path = Path(tracinginsights_dir)
-
-    # Check se c'è qualcosa in cache o sul disco
-    has_jolpica_cache = (jolpica_cache_path.exists() and
-                         any(jolpica_cache_path.glob("*.json")))
-    has_tracinginsights = (tracing_path.exists() and
-                           any(tracing_path.iterdir()))
-
-    if not has_jolpica_cache and not has_tracinginsights:
-        if use_synthetic_fallback:
-            log.warning(
-                "[DataLoader] Nessun dato reale trovato. "
-                "Uso dati SINTETICI per test/sviluppo. "
-                "Per training reale: "
-                "(1) avvia in ambiente con rete per fetch Jolpica, oppure "
-                "(2) clona TracingInsights: git clone "
-                "https://github.com/TracingInsights/RaceData.git data/racedata"
-            )
-            return _load_synthetic_fallback(years, through_round)
-        else:
-            raise RuntimeError(
-                "Nessun dato disponibile. "
-                "Imposta use_synthetic_fallback=True o fornisci i dati reali."
-            )
-
-    # Carica da Jolpica (cache o API)
-    log.info(f"[DataLoader] Loading {list(years)} via Jolpica...")
-    jolpica = JolpicaLoader(
-        cache_dir=jolpica_cache,
-        force_refresh=force_refresh,
-        db=db,
-    )
-
-    try:
-        races = jolpica.load_seasons(years, through_round=through_round)
-    except Exception as exc:
-        log.warning(f"[DataLoader] Jolpica fetch fallito: {exc}")
-        # Non saltare a sintetici se la cache disco esiste — potrebbe essere
-        # un errore parziale su un singolo file. Restituiamo lista vuota.
-        if has_jolpica_cache:
-            log.warning("[DataLoader] Cache disco presente ma fetch fallito — restituisco []")
-            return []
-        if use_synthetic_fallback:
-            return _load_synthetic_fallback(years, through_round)
-        raise
-
-    if not races:
-        if use_synthetic_fallback:
-            log.warning("[DataLoader] Jolpica ha restituito 0 gare → fallback sintetico")
-            return _load_synthetic_fallback(years, through_round)
-        return []
-
-    # Arricchisci con dati pace se disponibili (Kaggle o TracingInsights)
-    kaggle_loader = None
-    if has_tracinginsights:
-        # Prima prova Kaggle (CSV flat)
-        try:
-            from .loader_kaggle import create_kaggle_loader
-            kaggle_data_dir = tracing_path / "data"
-            kaggle_loader = create_kaggle_loader(data_dir=str(kaggle_data_dir))
-        except ImportError:
-            kaggle_loader = None
+        db: MongoDB database connection
+        years: Range of seasons to load
+        through_round: Truncate last season to this round
         
-        if kaggle_loader:
-            log.info(f"[DataLoader] Enriching with Kaggle pace data...")
-            races = kaggle_loader.enrich_races(races, years=list(years))
-        else:
-            # Fallback a TracingInsights (struttura directory)
-            log.info(f"[DataLoader] Enriching with TracingInsights pace data...")
-            ti = TracingInsightsLoader(data_dir=tracinginsights_dir)
-            races = ti.enrich_races(races, years=list(years))
-    else:
-        log.info("[DataLoader] Nessun dato pace disponibile — pace obs={}. "
-                 "Layer 1b userà media di campo come prior.")
-
-    enriched_count = sum(1 for r in races if r.get("constructor_pace_observations"))
-    log.info(
-        f"[DataLoader] Pronte {len(races)} gare "
-        f"({enriched_count} con pace data) per training"
-    )
-    return races
-
-
-def load_calibration_records(
-    odds_dir: str = "data/pinnacle_odds",
-    model_predictions: Optional[dict] = None,
-    outcomes: Optional[dict] = None,
-) -> list[dict]:
-    """
-    Carica CalibrationRecord per il Layer 4 Isotonic.
-
-    Args:
-        odds_dir: Directory con i file JSONL delle quote Pinnacle salvate.
-        model_predictions: {f"{race_id}_{driver_code}": p_raw} — output modello.
-        outcomes: {f"{race_id}_{driver_code}": 1|0} — risultati reali.
-
     Returns:
-        Lista CalibrationRecord dict. Vuota se odds non disponibili.
+        List of race dicts ready for F1PredictionPipeline.fit()
     """
-    from .loader_odds import OddsLoader
-    from pathlib import Path
-
-    if not Path(odds_dir).exists():
-        log.info(f"[DataLoader] Directory quote non trovata: {odds_dir}")
+    race_loader = MongoRaceLoader(db)
+    pace_loader = MongoPaceLoader(db)
+    
+    years_list = list(years)
+    
+    log.info(f"[DataLoader] Loading {years_list} from MongoDB...")
+    
+    races = race_loader.load_seasons(years_list, through_round)
+    
+    if not races:
+        log.warning("[DataLoader] No races found in MongoDB")
         return []
+    
+    pace_obs = pace_loader.load_pace_observations(years_list)
+    
+    race_dicts = []
+    for race in races:
+        race_dict = race.to_dict()
+        
+        race_pace = pace_loader.load_race_pace(race.year, race.round)
+        if race_pace:
+            race_dict["constructor_pace_observations"] = race_pace
+        
+        race_dicts.append(race_dict)
+    
+    enriched_count = sum(1 for r in race_dicts if r.get("constructor_pace_observations"))
+    log.info(
+        f"[DataLoader] {len(race_dicts)} races loaded "
+        f"({enriched_count} with pace data)"
+    )
+    
+    return race_dicts
 
-    loader = OddsLoader(cache_dir=odds_dir)
-    odds_records = loader.load_saved_records(odds_dir)
 
-    if not odds_records:
-        log.info("[DataLoader] Nessun OddsRecord trovato — Layer 4 non calibrato")
-        return []
-
-    if model_predictions and outcomes:
-        cal_records = loader.build_calibration_records(
-            odds_records, model_predictions, outcomes
-        )
-        log.info(f"[DataLoader] {len(cal_records)} CalibrationRecord pronti")
-        return cal_records
-
-    log.info(f"[DataLoader] {len(odds_records)} OddsRecord trovati (senza match modello)")
-    return odds_records
-
-
-# ---------------------------------------------------------------------------
-# Fallback sintetico
-# ---------------------------------------------------------------------------
-
-def _load_synthetic_fallback(years, through_round) -> list[dict]:
+def load_calibration_records_from_mongo(
+    db,
+    years: range | list[int] = range(2022, 2027),
+    market: Optional[str] = None,
+    min_hours_to_race: float = 24.0,
+) -> list[CalibrationRecord]:
     """
-    Genera dati sintetici come fallback quando i dati reali non sono disponibili.
-    Usa data/adapter.py che wrappa il generator esistente.
+    Load calibration records from MongoDB.
+    
+    Args:
+        db: MongoDB database connection
+        years: Range of seasons
+        market: Filter by market (h2h, outrights)
+        min_hours_to_race: Minimum hours before race
+        
+    Returns:
+        List of OddsRecord for calibration
     """
-    try:
-        from .adapter import generate_seasons
-        years_list = list(years)
-        races = generate_seasons(years=years_list, through_round=through_round)
-        for r in races:
-            r["_is_synthetic"] = True
-        log.info(f"[DataLoader] Generati {len(races)} race sintetiche per {years_list}")
-        return races
-    except Exception as exc:
-        log.warning(f"[DataLoader] Fallback sintetico fallito: {exc}")
-        return []
+    odds_loader = MongoOddsLoader(db)
+    years_list = list(years)
+    
+    log.info(f"[DataLoader] Loading odds for {years_list}...")
+    
+    records = odds_loader.load_historical_odds(
+        years=years_list,
+        market=market,
+        min_hours_to_race=min_hours_to_race,
+    )
+    
+    log.info(f"[DataLoader] {len(records)} odds records loaded")
+    
+    return records
+
+
+__all__ = [
+    "MongoRaceLoader",
+    "MongoPaceLoader",
+    "MongoOddsLoader",
+    "MongoCircuitProfileLoader",
+    "Race",
+    "RaceResult",
+    "QualifyingResult",
+    "PaceObservation",
+    "OddsRecord",
+    "CalibrationRecord",
+    "CircuitSpeedProfile",
+    "CircuitType",
+    "DEFAULT_PROFILES",
+    "get_data_loaders",
+    "load_training_data_from_mongo",
+    "load_calibration_records_from_mongo",
+]
