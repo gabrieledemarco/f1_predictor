@@ -355,12 +355,14 @@ def _resolve_uri() -> Optional[str]:
                     normalized = _normalize_uri(st.secrets[key])
                     if normalized:
                         return normalized
+                    return st.secrets[key]
     except Exception:
         pass
 
     # 2. Env var diretta
     for key in uri_keys:
         uri = _normalize_uri(os.environ.get(key))
+        uri = os.environ.get(key)
         if uri:
             return uri
 
@@ -375,6 +377,7 @@ def _resolve_uri() -> Optional[str]:
                         normalized = _normalize_uri(line.split("=", 1)[1])
                         if normalized:
                             return normalized
+                        return line.split("=", 1)[1].strip().strip('"').strip("'")
 
     return None
 
