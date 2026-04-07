@@ -1,0 +1,94 @@
+name: Test MongoDB Connection
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment_name:
+        description: "Environment name da usare (es: MONGODB_URI). Lascia default se usi Environment secrets"
+        required: true
+        default: "MONGODB_URI"
+      fail_if_missing:
+        description: "Fail se nessun secret Mongo è disponibile"
+        required: true
+        type: choice
+        options: ["true", "false"]
+        default: "true"
+
+jobs:
+  mongo-connection-test:
+    name: "MongoDB connectivity smoke test"
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: ${{ github.event.inputs.environment_name }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install pymongo
+        run: pip install pymongo[srv]
+
+      - name: Resolve secret presence (safe)
+        env:
+          MONGODB_URI: ${{ secrets.MONGODB_URI }}
+          MONGO_URI: ${{ secrets.MONGO_URI }}
+        run: |
+          python - << 'EOF'
+          import os, sys
+
+          mongodb_uri_present = bool((os.environ.get("MONGODB_URI") or "").strip())
+          mongo_uri_present = bool((os.environ.get("MONGO_URI") or "").strip())
+
+          print(f"MONGODB_URI presente: {mongodb_uri_present}")
+          print(f"MONGO_URI presente   : {mongo_uri_present}")
+
+          if not (mongodb_uri_present or mongo_uri_present):
+              mode = "${{ github.event.inputs.fail_if_missing }}"
+              msg = "Nessun secret Mongo disponibile (MONGODB_URI/MONGO_URI)."
+              if mode == "true":
+                  print(msg)
+                  sys.exit(1)
+              print(msg + " Continuo per debug.")
+          EOF
+
+      - name: Parse URI and ping MongoDB (safe)
+        env:
+          MONGODB_URI: ${{ secrets.MONGODB_URI }}
+          MONGO_URI: ${{ secrets.MONGO_URI }}
+        run: |
+          python - << 'EOF'
+          import os, sys
+          from urllib.parse import urlparse
+          from pymongo import MongoClient
+
+          uri = (
+              os.environ.get("MONGODB_URI")
+              or os.environ.get("MONGO_URI")
+              or ""
+          ).strip().strip('"').strip("'")
+
+          if not uri:
+              print("URI assente: impossibile testare la connessione")
+              sys.exit(1)
+
+          parsed = urlparse(uri)
+          print("Schema valido:", parsed.scheme in {"mongodb", "mongodb+srv"})
+          print("Username presente:", bool(parsed.username))
+          print("Password presente:", bool(parsed.password))
+          print("Host:", parsed.hostname)
+          print("Path DB:", parsed.path or "/")
+
+          try:
+              client = MongoClient(uri, serverSelectionTimeoutMS=7000, connectTimeoutMS=7000)
+              client.admin.command("ping")
+              print("✅ MongoDB ping OK")
+              sys.exit(0)
+          except Exception as exc:
+              print(f"❌ MongoDB ping FAIL: {exc}")
+              sys.exit(1)
+          EOF

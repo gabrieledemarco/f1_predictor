@@ -340,18 +340,28 @@ def _resolve_uri() -> Optional[str]:
     """
     uri_keys = ("MONGO_URI", "MONGODB_URI")
 
+    def _normalize_uri(raw: str | None) -> Optional[str]:
+        if not raw:
+            return None
+        cleaned = raw.strip().strip('"').strip("'")
+        return cleaned or None
+
     # 1. Streamlit secrets (non fallisce se non siamo in Streamlit)
     try:
         import streamlit as st
         if hasattr(st, "secrets"):
             for key in uri_keys:
                 if key in st.secrets:
+                    normalized = _normalize_uri(st.secrets[key])
+                    if normalized:
+                        return normalized
                     return st.secrets[key]
     except Exception:
         pass
 
     # 2. Env var diretta
     for key in uri_keys:
+        uri = _normalize_uri(os.environ.get(key))
         uri = os.environ.get(key)
         if uri:
             return uri
@@ -364,6 +374,9 @@ def _resolve_uri() -> Optional[str]:
                 line = line.strip()
                 for key in uri_keys:
                     if line.startswith(f"{key}="):
+                        normalized = _normalize_uri(line.split("=", 1)[1])
+                        if normalized:
+                            return normalized
                         return line.split("=", 1)[1].strip().strip('"').strip("'")
 
     return None

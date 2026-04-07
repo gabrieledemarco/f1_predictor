@@ -66,12 +66,13 @@ jobs:
       - name: Verify MongoDB data availability
         env:
           MONGODB_URI: ${{ secrets.MONGODB_URI }}
+          MONGO_URI: ${{ secrets.MONGODB_URI }}
         run: |
           python - << 'EOF'
           import os, sys
-          uri = os.environ.get("MONGODB_URI")
+          uri = os.environ.get("MONGODB_URI") or os.environ.get("MONGO_URI")
           if not uri:
-              print("WARNING: MONGODB_URI non configurata — training userà cache disco o sintetici")
+              print("WARNING: MONGODB_URI/MONGO_URI non configurata — training userà cache disco o sintetici")
               sys.exit(0)
           try:
               from pymongo import MongoClient
@@ -93,6 +94,7 @@ jobs:
         env:
           THE_ODDS_API_KEY: ${{ secrets.THE_ODDS_API_KEY }}
           MONGODB_URI: ${{ secrets.MONGODB_URI }}
+          MONGO_URI: ${{ secrets.MONGODB_URI }}
         run: |
           if [ -n "$THE_ODDS_API_KEY" ]; then
             python scripts/collect_odds.py --all-markets --mongo
@@ -117,6 +119,7 @@ jobs:
       - name: Run training pipeline
         env:
           MONGODB_URI: ${{ secrets.MONGODB_URI }}
+          MONGO_URI: ${{ secrets.MONGODB_URI }}
           THE_ODDS_API_KEY: ${{ secrets.THE_ODDS_API_KEY }}
         run: |
           DRY_FLAG=""
@@ -138,6 +141,7 @@ jobs:
         if: ${{ steps.params.outputs.dry_run == 'false' }}
         env:
           MONGODB_URI: ${{ secrets.MONGODB_URI }}
+          MONGO_URI: ${{ secrets.MONGODB_URI }}
         run: |
           python train_pipeline.py --list-versions || echo "MongoDB non raggiungibile"
 
@@ -172,14 +176,15 @@ jobs:
       - name: Check model quality
         env:
           MONGODB_URI: ${{ secrets.MONGODB_URI }}
+          MONGO_URI: ${{ secrets.MONGODB_URI }}
         run: |
           python - << 'EOF'
           import os, sys
           try:
               from pymongo import MongoClient
-              uri = os.environ.get("MONGODB_URI")
+              uri = os.environ.get("MONGODB_URI") or os.environ.get("MONGO_URI")
               if not uri:
-                  print("MONGODB_URI non configurata — quality gate skipped")
+                  print("MONGODB_URI/MONGO_URI non configurata — quality gate skipped")
                   sys.exit(0)
 
               client = MongoClient(uri, serverSelectionTimeoutMS=5000)

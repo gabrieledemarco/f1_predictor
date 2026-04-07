@@ -78,3 +78,10 @@ Data audit: 2026-04-07
 3. **Hardening workflow manuale:** sostituire `--force` con `--force-with-lease` e restringere branch target.
 4. **Documentazione unica:** aggiornare README e ISTRUZIONI_ESECUZIONE con una policy chiara sulle env.
 5. **Guardrail CI:** aggiungere check statico che fallisce se viene introdotta una nuova alias env non documentata.
+
+## 6) Troubleshooting rapido (se GitHub Actions fallisce ancora su MongoDB)
+
+1. Verificare che il secret `MONGODB_URI` sia presente e senza apici/spazi iniziali/finali.
+2. In Atlas, controllare **Network Access**: i runner GitHub-hosted richiedono allowlist compatibile (spesso `0.0.0.0/0` con credenziali robuste).
+3. Verificare utente DB su Atlas (permessi `readWrite` sul DB target `MONGO_DB`).
+4. Se la stringa è `mongodb+srv://`, confermare che il cluster esponga correttamente record DNS SRV/TXT.

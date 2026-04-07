@@ -59,13 +59,20 @@ def main() -> None:
     db = None
     if not args.dry_run:
         try:
-            from core.db import get_db_direct
+            from core.db import get_db_direct, _resolve_uri
             db = get_db_direct()
             if db is None:
-                log.error(
-                    "MongoDB non raggiungibile. Verifica MONGODB_URI nel .env.\n"
-                    "Usa --dry-run per testare senza connessione."
-                )
+                if _resolve_uri():
+                    log.error(
+                        "URI MongoDB rilevata ma connessione fallita.\n"
+                        "Cause tipiche: Atlas Network Access/IP allowlist, credenziali utente, DNS SRV.\n"
+                        "Usa --dry-run per testare senza connessione."
+                    )
+                else:
+                    log.error(
+                        "MongoDB non configurato. Verifica MONGODB_URI/MONGO_URI nel .env o nei secrets.\n"
+                        "Usa --dry-run per testare senza connessione."
+                    )
                 sys.exit(1)
             log.info(f"MongoDB connesso: {db.name}")
         except ImportError as e:
