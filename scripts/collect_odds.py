@@ -150,8 +150,10 @@ def save_to_mongo(records: list[dict]) -> int:
     inserted = 0
     for rec in records:
         filter_key = {
-            "race_id":     rec.get("race_id", 0),
-            "driver_code": rec.get("driver", ""),
+            # "commence" identifica univocamente l'evento (ISO timestamp GP start).
+            # Non usiamo race_id perché in questo script vale sempre 0.
+            "commence":    rec.get("commence", ""),
+            "driver":      rec.get("driver", ""),
             "market":      rec.get("market", ""),
             "timestamp":   rec.get("timestamp", ""),
         }
