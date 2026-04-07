@@ -39,27 +39,25 @@ jobs:
         id: changes
         run: |
           CURRENT_YEAR=$(date +%Y)
-          YEAR=${YEAR:-${{ inputs.year }}
-          YEAR=${YEAR:-$CURRENT_YEAR}
+          if [ -n "$YEAR" ] && [ "$YEAR" != "" ]; then
+            SELECTED_YEAR="$YEAR"
+          else
+            SELECTED_YEAR="$CURRENT_YEAR"
+          fi
           
-          if [ -d "data/racedata/$YEAR" ]; then
-            DIFF=$(diff -rq data/racedata/$YEAR data/racedata_tmp/$YEAR 2>/dev/null || true)
+          if [ -d "data/racedata/$SELECTED_YEAR" ]; then
+            DIFF=$(diff -rq data/racedata/$SELECTED_YEAR data/racedata_tmp/$SELECTED_YEAR 2>/dev/null || true)
             if [ -z "$DIFF" ]; then
-              echo "changed=true" >> $GITHUB_OUTPUT
-              echo "circuits=[]" >> $GITHUB_OUTPUT
+              echo "changed=false" >> $GITHUB_OUTPUT
             else
               echo "changed=true" >> $GITHUB_OUTPUT
-              CHANGED_CIRCUITS=$(echo "$DIFF" | grep "Only in data/racedata_tmp/$YEAR" | sed "s|Only in data/racedata_tmp/$YEAR: ||" || true)
-              echo "circuits=$CHANGED_CIRCUITS" >> $GITHUB_OUTPUT
             fi
           else
             echo "changed=true" >> $GITHUB_OUTPUT
-            CIRCUITS=$(ls data/racedata_tmp/$YEAR 2>/dev/null || echo "")
-            echo "circuits=$CIRCUITS" >> $GITHUB_OUTPUT
           fi
-          echo "year=$YEAR" >> $GITHUB_OUTPUT
+          echo "year=$SELECTED_YEAR" >> $GITHUB_OUTPUT
         env:
-          YEAR: ${{ inputs.year }}
+          YEAR: ${{ inputs.year || '' }}
 
       - name: Replace racedata
         if: steps.changes.outputs.changed == 'true'
@@ -91,7 +89,7 @@ jobs:
         env:
           MONGODB_URI: ${{ secrets.MONGODB_URI }}
           MONGO_DB: ${{ vars.MONGO_DB || 'betbreaker' }}
-          YEAR: ${{ needs.sync-tracinginsights.outputs.year || inputs.year || env.CURRENT_YEAR }}
+          YEAR: ${{ needs.sync-tracinginsights.outputs.year }}
           FORCE: ${{ inputs.force || 'false' }}
 
   compute-pace:
@@ -117,7 +115,7 @@ jobs:
         env:
           MONGODB_URI: ${{ secrets.MONGODB_URI }}
           MONGO_DB: ${{ vars.MONGO_DB || 'betbreaker' }}
-          YEAR: ${{ inputs.year || env.CURRENT_YEAR }}
+          YEAR: ${{ needs.sync-tracinginsights.outputs.year }}
 
   notify:
     name: Notify on failure

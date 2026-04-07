@@ -210,9 +210,9 @@ def main():
     print(f"Regions: {regions}")
     print()
     
-    api_key = os.environ.get("ODDS_API_KEY")
+    api_key = os.environ.get("THE_ODDS_API_KEY")
     if not api_key:
-        print("[ERROR] ODDS_API_KEY environment variable is required")
+        print("[ERROR] THE_ODDS_API_KEY environment variable is required")
         sys.exit(1)
     
     try:

@@ -45,14 +45,15 @@ jobs:
           chmod 600 ~/.kaggle/kaggle.json
 
       - name: Download dataset
+        id: download
         run: |
           python -c "
           import kagglehub
           path = kagglehub.dataset_download('jtrotman/formula-1-race-data')
           print(f'Dataset downloaded to: {path}')
-          print(f'::set-output name=path::{path}')
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
+              f.write('path=' + path)
           " >> $GITHUB_OUTPUT
-        id: download
         env:
           KAGGLE_USERNAME: ${{ secrets.KAGGLE_USERNAME }}
           KAGGLE_KEY: ${{ secrets.KAGGLE_KEY }}
