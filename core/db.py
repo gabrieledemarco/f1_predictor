@@ -117,11 +117,10 @@ def collection_for_year(db, year: int):
     La crea automaticamente (MongoDB è schema-less) e assicura l'indice univoco.
     """
     coll_name = f"{_COLLECTION_PREFIX}{year}"
-    coll_key  = f"{db.name}.{coll_name}"
     coll = db[coll_name]
-    if coll_key not in _indexed_collections:
+    if coll_name not in _indexed_collections:
         _ensure_index(coll)
-        _indexed_collections.add(coll_key)
+        _indexed_collections.add(coll_name)
     return coll
 
 
@@ -144,11 +143,10 @@ def lap_times_collection(db, year: int):
     Indici: {year, round_num, session_key, driver_number} per query veloci.
     """
     coll_name = f"{_LAPTIMES_PREFIX}{year}"
-    coll_key  = f"{db.name}.{coll_name}"
     coll = db[coll_name]
-    if coll_key not in _indexed_collections:
+    if coll_name not in _indexed_collections:
         _ensure_lap_times_index(coll)
-        _indexed_collections.add(coll_key)
+        _indexed_collections.add(coll_name)
     return coll
 
 
@@ -158,11 +156,10 @@ def driver_info_collection(db, year: int):
     Indici: {year, round_num, session_key, driver_number} per join con lap_times.
     """
     coll_name = f"{_DRIVERINFO_PREFIX}{year}"
-    coll_key  = f"{db.name}.{coll_name}"
     coll = db[coll_name]
-    if coll_key not in _indexed_collections:
+    if coll_name not in _indexed_collections:
         _ensure_driver_info_index(coll)
-        _indexed_collections.add(coll_key)
+        _indexed_collections.add(coll_name)
     return coll
 
 
@@ -172,11 +169,10 @@ def session_stats_collection(db, year: int):
     Indici: {year, round_num, session_name, driver} per statistiche rapide.
     """
     coll_name = f"{_SESSIONSTATS_PREFIX}{year}"
-    coll_key  = f"{db.name}.{coll_name}"
     coll = db[coll_name]
-    if coll_key not in _indexed_collections:
+    if coll_name not in _indexed_collections:
         _ensure_session_stats_index(coll)
-        _indexed_collections.add(coll_key)
+        _indexed_collections.add(coll_name)
     return coll
 
 
@@ -187,9 +183,8 @@ def jolpica_cache_collection(db):
     Indice unico su {year, round, data_type}.
     """
     from pymongo import ASCENDING
-    coll_key = f"{db.name}.{_JOLPICA_CACHE}"
     coll = db[_JOLPICA_CACHE]
-    if coll_key not in _indexed_collections:
+    if _JOLPICA_CACHE not in _indexed_collections:
         existing = {idx["name"] for idx in coll.list_indexes()}
         if "jolpica_cache_unique" not in existing:
             coll.create_index(
@@ -198,7 +193,7 @@ def jolpica_cache_collection(db):
                 name="jolpica_cache_unique",
                 background=True,
             )
-        _indexed_collections.add(coll_key)
+        _indexed_collections.add(_JOLPICA_CACHE)
     return coll
 
 
@@ -209,9 +204,8 @@ def odds_records_collection(db):
     Indice unico su {race_id, driver_code, market, timestamp}.
     """
     from pymongo import ASCENDING
-    coll_key = f"{db.name}.{_ODDS_RECORDS}"
     coll = db[_ODDS_RECORDS]
-    if coll_key not in _indexed_collections:
+    if _ODDS_RECORDS not in _indexed_collections:
         existing = {idx["name"] for idx in coll.list_indexes()}
         if "odds_records_unique" not in existing:
             coll.create_index(
@@ -225,7 +219,7 @@ def odds_records_collection(db):
                 name="odds_records_unique",
                 background=True,
             )
-        _indexed_collections.add(coll_key)
+        _indexed_collections.add(_ODDS_RECORDS)
     return coll
 
 
@@ -361,14 +355,12 @@ def _resolve_uri() -> Optional[str]:
                     normalized = _normalize_uri(st.secrets[key])
                     if normalized:
                         return normalized
-                    return st.secrets[key]
     except Exception:
         pass
 
     # 2. Env var diretta
     for key in uri_keys:
         uri = _normalize_uri(os.environ.get(key))
-        uri = os.environ.get(key)
         if uri:
             return uri
 
@@ -383,7 +375,6 @@ def _resolve_uri() -> Optional[str]:
                         normalized = _normalize_uri(line.split("=", 1)[1])
                         if normalized:
                             return normalized
-                        return line.split("=", 1)[1].strip().strip('"').strip("'")
 
     return None
 
