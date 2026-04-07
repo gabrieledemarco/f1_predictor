@@ -1,0 +1,132 @@
+name: Import TracingInsights Data
+
+on:
+  workflow_dispatch:
+    inputs:
+      year:
+        description: 'Year to import (default: current year)'
+        required: false
+        default: ''
+      force:
+        description: 'Force re-import'
+        required: false
+        default: 'false'
+  schedule:
+    - cron: '0 3 * * 3'
+
+env:
+  MONGODB_URI: ${{ secrets.MONGODB_URI }}
+  MONGO_DB: ${{ vars.MONGO_DB || 'betbreaker' }}
+
+jobs:
+  sync-tracinginsights:
+    name: Sync TracingInsights Repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Clone TracingInsights RaceData
+        run: |
+          git clone --depth 1 https://github.com/TracingInsights/RaceData.git data/racedata_tmp
+          rm -rf data/racedata_tmp/.git
+          rm -rf data/racedata_tmp/.github
+          ls -la data/racedata_tmp/
+
+      - name: Detect changed circuits
+        id: changes
+        run: |
+          CURRENT_YEAR=$(date +%Y)
+          YEAR=${YEAR:-${{ inputs.year }}
+          YEAR=${YEAR:-$CURRENT_YEAR}
+          
+          if [ -d "data/racedata/$YEAR" ]; then
+            DIFF=$(diff -rq data/racedata/$YEAR data/racedata_tmp/$YEAR 2>/dev/null || true)
+            if [ -z "$DIFF" ]; then
+              echo "changed=true" >> $GITHUB_OUTPUT
+              echo "circuits=[]" >> $GITHUB_OUTPUT
+            else
+              echo "changed=true" >> $GITHUB_OUTPUT
+              CHANGED_CIRCUITS=$(echo "$DIFF" | grep "Only in data/racedata_tmp/$YEAR" | sed "s|Only in data/racedata_tmp/$YEAR: ||" || true)
+              echo "circuits=$CHANGED_CIRCUITS" >> $GITHUB_OUTPUT
+            fi
+          else
+            echo "changed=true" >> $GITHUB_OUTPUT
+            CIRCUITS=$(ls data/racedata_tmp/$YEAR 2>/dev/null || echo "")
+            echo "circuits=$CIRCUITS" >> $GITHUB_OUTPUT
+          fi
+          echo "year=$YEAR" >> $GITHUB_OUTPUT
+        env:
+          YEAR: ${{ inputs.year }}
+
+      - name: Replace racedata
+        if: steps.changes.outputs.changed == 'true'
+        run: |
+          rm -rf data/racedata
+          mv data/racedata_tmp data/racedata
+          echo "Racedata updated for year ${{ steps.changes.outputs.year }}"
+
+  import-laps:
+    name: Import Lap Times to MongoDB
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    needs: sync-tracinginsights
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install pymongo python-dotenv pandas
+
+      - name: Import lap times
+        run: python scripts/import_tracinginsights.py
+        env:
+          MONGODB_URI: ${{ secrets.MONGODB_URI }}
+          MONGO_DB: ${{ vars.MONGO_DB || 'betbreaker' }}
+          YEAR: ${{ needs.sync-tracinginsights.outputs.year || inputs.year || env.CURRENT_YEAR }}
+          FORCE: ${{ inputs.force || 'false' }}
+
+  compute-pace:
+    name: Compute Constructor Pace Observations
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: import-laps
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install pymongo python-dotenv numpy pandas scipy
+
+      - name: Compute pace observations
+        run: python scripts/compute_pace_observations.py
+        env:
+          MONGODB_URI: ${{ secrets.MONGODB_URI }}
+          MONGO_DB: ${{ vars.MONGO_DB || 'betbreaker' }}
+          YEAR: ${{ inputs.year || env.CURRENT_YEAR }}
+
+  notify:
+    name: Notify on failure
+    runs-on: ubuntu-latest
+    needs: [sync-tracinginsights, import-laps, compute-pace]
+    if: failure()
+    
+    steps:
+      - name: Create failure summary
+        run: |
+          echo "## Import Failed" >> $GITHUB_STEP_SUMMARY
+          echo "TracingInsights import failed. Check logs for details." >> $GITHUB_STEP_SUMMARY
