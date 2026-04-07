@@ -41,6 +41,7 @@ jobs:
     name: "Fetch Jolpica → MongoDB"
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    environment: MONGODB_URI
 
     steps:
       - name: Checkout repository
@@ -61,22 +62,51 @@ jobs:
       - name: Fetch Jolpica data → MongoDB
         env:
           MONGODB_URI: ${{ secrets.MONGODB_URI }}
+          MONGO_URI: ${{ secrets.MONGODB_URI }}
         run: |
           YEAR="${{ github.event.inputs.year || '2026' }}"
           FROM="${{ github.event.inputs.from_round || '1' }}"
           TO="${{ github.event.inputs.to_round || '24' }}"
 
           echo "Fetching anno=$YEAR round=$FROM→$TO"
-          python scripts/fetch_jolpica.py \
-            --year "$YEAR" \
-            --from-round "$FROM" \
-            --to-round "$TO"
+          if python - << 'EOF'
+          import os, sys
+          from pymongo import MongoClient
+
+          uri = (os.environ.get("MONGODB_URI") or os.environ.get("MONGO_URI") or "").strip().strip('"').strip("'")
+          if not uri:
+              print("Mongo URI non configurata")
+              sys.exit(1)
+
+          try:
+              client = MongoClient(uri, serverSelectionTimeoutMS=5000, connectTimeoutMS=5000)
+              client.admin.command("ping")
+              print("MongoDB ping OK")
+              sys.exit(0)
+          except Exception as exc:
+              print(f"MongoDB ping FAIL: {exc}")
+              sys.exit(1)
+          EOF
+          then
+            python scripts/fetch_jolpica.py \
+              --year "$YEAR" \
+              --from-round "$FROM" \
+              --to-round "$TO"
+          else
+            echo "::warning::MongoDB non raggiungibile: eseguo fetch in --dry-run (cache locale)."
+            python scripts/fetch_jolpica.py \
+              --year "$YEAR" \
+              --from-round "$FROM" \
+              --to-round "$TO" \
+              --dry-run
+          fi
 
   # ────────────────────────────────────────────────────────────────────────
   collect-odds:
     name: "Collect Pinnacle Odds → MongoDB"
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    environment: MONGODB_URI
     # Non blocca fetch-jolpica se fallisce
     if: ${{ github.event.inputs.skip_odds != 'true' }}
 
@@ -97,6 +127,7 @@ jobs:
         continue-on-error: true
         env:
           MONGODB_URI: ${{ secrets.MONGODB_URI }}
+          MONGO_URI: ${{ secrets.MONGODB_URI }}
           THE_ODDS_API_KEY: ${{ secrets.THE_ODDS_API_KEY }}
         run: |
           if [ -n "$THE_ODDS_API_KEY" ]; then
@@ -111,6 +142,7 @@ jobs:
     name: "Data Availability Report"
     runs-on: ubuntu-latest
     needs: [fetch-jolpica, collect-odds]
+    environment: MONGODB_URI
     if: always()
 
     steps:
@@ -128,12 +160,13 @@ jobs:
       - name: Report MongoDB data availability
         env:
           MONGODB_URI: ${{ secrets.MONGODB_URI }}
+          MONGO_URI: ${{ secrets.MONGODB_URI }}
         run: |
           python - << 'EOF'
           import os, sys
-          uri = os.environ.get("MONGODB_URI")
+          uri = os.environ.get("MONGODB_URI") or os.environ.get("MONGO_URI")
           if not uri:
-              print("MONGODB_URI non configurata — report skipped")
+              print("MONGODB_URI/MONGO_URI non configurata — report skipped")
               sys.exit(0)
 
           try:

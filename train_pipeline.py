@@ -21,7 +21,7 @@ Uso:
 Requisiti locali:
     pip install scikit-learn scipy numpy pandas pymongo[srv] requests
     git clone https://github.com/TracingInsights/RaceData.git data/racedata
-    # .env con MONGODB_URI=mongodb+srv://...
+    # .env con MONGO_URI=... (oppure MONGODB_URI=...)
 """
 
 from __future__ import annotations
@@ -100,7 +100,7 @@ def connect_db():
 
     db = get_db_direct()
     if db is None:
-        log.error("MongoDB non raggiungibile. Controlla MONGO_URI nel file .env")
+        log.error("MongoDB non raggiungibile. Controlla MONGO_URI/MONGODB_URI nel file .env")
         sys.exit(1)
     log.info(f"MongoDB connesso: {db.name}")
     return db
