@@ -3,8 +3,8 @@ core/db.py
 Layer di connessione MongoDB per BetBreaker.
 
 Strategia dual-mode:
-  - PRODUZIONE (Streamlit Cloud): legge MONGO_URI da st.secrets
-  - SVILUPPO LOCALE: legge MONGO_URI da .env oppure usa fallback JSON
+  - PRODUZIONE (Streamlit Cloud): legge MONGO_URI/MONGODB_URI da st.secrets
+  - SVILUPPO LOCALE: legge MONGO_URI/MONGODB_URI da .env oppure usa fallback JSON
   - ADMIN TOOL: usa get_db_direct() senza dipendere da Streamlit
 
 Struttura Atlas:
@@ -42,7 +42,7 @@ def get_db():
     """
     Ritorna il database MongoDB.
     Chiamata dall'app Streamlit — usa @st.cache_resource internamente.
-    Se MONGO_URI non è configurato ritorna None → il layer di persistenza
+    Se MONGO_URI/MONGODB_URI non è configurato ritorna None → il layer di persistenza
     cade automaticamente sul fallback JSON locale.
     """
     import streamlit as st
@@ -85,7 +85,7 @@ def get_db_direct(uri: str = None, db_name: str = None):
 
     Priorità URI:
       1. Parametro esplicito
-      2. Variabile d'ambiente MONGO_URI
+      2. Variabile d'ambiente MONGO_URI / MONGODB_URI
       3. File .env nella root del progetto
       4. None → fallback JSON
     """
@@ -333,23 +333,36 @@ def collection_year_from_name(name: str) -> Optional[int]:
 
 def _resolve_uri() -> Optional[str]:
     """
-    Risolve MONGO_URI nell'ordine:
-      1. st.secrets["MONGO_URI"]         ← Streamlit Cloud / secrets.toml locale
-      2. os.environ["MONGO_URI"]          ← variabile d'ambiente
-      3. .env file nella project root     ← sviluppo locale
+    Risolve URI MongoDB nell'ordine:
+      1. st.secrets["MONGO_URI"] / st.secrets["MONGODB_URI"]
+      2. os.environ["MONGO_URI"] / os.environ["MONGODB_URI"]
+      3. .env file nella project root
     """
+    uri_keys = ("MONGO_URI", "MONGODB_URI")
+
+    def _normalize_uri(raw: str | None) -> Optional[str]:
+        if not raw:
+            return None
+        cleaned = raw.strip().strip('"').strip("'")
+        return cleaned or None
+
     # 1. Streamlit secrets (non fallisce se non siamo in Streamlit)
     try:
         import streamlit as st
-        if hasattr(st, "secrets") and "MONGO_URI" in st.secrets:
-            return st.secrets["MONGO_URI"]
+        if hasattr(st, "secrets"):
+            for key in uri_keys:
+                if key in st.secrets:
+                    normalized = _normalize_uri(st.secrets[key])
+                    if normalized:
+                        return normalized
     except Exception:
         pass
 
     # 2. Env var diretta
-    uri = os.environ.get("MONGO_URI")
-    if uri:
-        return uri
+    for key in uri_keys:
+        uri = _normalize_uri(os.environ.get(key))
+        if uri:
+            return uri
 
     # 3. .env file
     env_path = os.path.join(os.path.dirname(__file__), "..", ".env")
@@ -357,8 +370,11 @@ def _resolve_uri() -> Optional[str]:
         with open(env_path) as f:
             for line in f:
                 line = line.strip()
-                if line.startswith("MONGO_URI="):
-                    return line.split("=", 1)[1].strip().strip('"').strip("'")
+                for key in uri_keys:
+                    if line.startswith(f"{key}="):
+                        normalized = _normalize_uri(line.split("=", 1)[1])
+                        if normalized:
+                            return normalized
 
     return None
 
