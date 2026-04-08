@@ -56,6 +56,12 @@ jobs:
       - name: Install dependencies
         run: pip install pymongo python-dotenv pandas
 
+      - name: Cleanup old lap times
+        run: python scripts/cleanup_old_lap_times.py
+        env:
+          MONGODB_URI: ${{ secrets.MONGODB_URI }}
+          MONGO_DB: ${{ vars.MONGO_DB || 'betbreaker' }}
+
       - name: Import lap times → MongoDB
         run: python scripts/import_tracinginsights.py
         env:
