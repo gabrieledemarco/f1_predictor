@@ -77,6 +77,10 @@ def load_training_data_from_mongo(
     db,
     years: range | list[int] = range(2019, 2027),
     through_round: Optional[int] = None,
+    jolpica_cache: Optional[str] = None,
+    tracinginsights_dir: Optional[str] = None,
+    use_synthetic_fallback: bool = True,
+    force_refresh: bool = False,
 ) -> list[dict]:
     """
     Load training data from MongoDB.
@@ -85,6 +89,10 @@ def load_training_data_from_mongo(
         db: MongoDB database connection
         years: Range of seasons to load
         through_round: Truncate last season to this round
+        jolpica_cache: Ignored (for compatibility with train_pipeline.py)
+        tracinginsights_dir: Ignored (for compatibility with train_pipeline.py)
+        use_synthetic_fallback: If True and no data found, return empty list
+        force_refresh: Ignored (for compatibility)
         
     Returns:
         List of race dicts ready for F1PredictionPipeline.fit()
