@@ -10,13 +10,13 @@ on:
   workflow_dispatch:
     inputs:
       year:
-        description: "Anno di validazione (es. 2025 per validare sul 2025 completo)"
+        description: "Anno di validazione (es. 2024 per validare sul 2024 completo)"
         required: true
-        default: "2025"
+        default: "2024"
       through_round:
-        description: "Ultimo round completato (es. 5)"
+        description: "Ultimo round completato (es. 24 per stagione completa)"
         required: true
-        default: "1"
+        default: "24"
       dry_run:
         description: "Dry run (non salva su MongoDB)"
         required: false
@@ -108,19 +108,19 @@ jobs:
       - name: Determine training parameters
         id: params
         run: |
-          YEAR="${{ github.event.inputs.year || '2025' }}"
+          YEAR="${{ github.event.inputs.year || '2024' }}"
           ROUND="${{ github.event.inputs.through_round || '24' }}"
           DRY="${{ github.event.inputs.dry_run || 'false' }}"
           MC="${{ github.event.inputs.n_mc_sim || '50000' }}"
-          # val_from = YEAR per validare su dati non visti durante training
-          # Con YEAR=2025, val_from=2025: train=2018-2024, test=2025
+          # val_from = YEAR per validare solo sull'anno target
+          # Con YEAR=2024, val_from=2024: train=2018-2023, test=2024
           VAL_FROM=$YEAR
           echo "year=$YEAR"       >> $GITHUB_OUTPUT
           echo "round=$ROUND"     >> $GITHUB_OUTPUT
           echo "dry_run=$DRY"     >> $GITHUB_OUTPUT
           echo "n_mc_sim=$MC"     >> $GITHUB_OUTPUT
           echo "val_from=$VAL_FROM" >> $GITHUB_OUTPUT
-          echo "Training: Anno $YEAR Round $ROUND | val_from=$VAL_FROM | MC=$MC | dry_run=$DRY"
+          echo "Training: train=2018-$((YEAR-1)), test=$YEAR | R$ROUND | MC=$MC"
 
       - name: Run training pipeline
         env:
