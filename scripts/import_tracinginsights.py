@@ -161,7 +161,9 @@ def import_laps_csv(db, csv_path: Path, year: int) -> int:
 def main():
     import argparse
     parser = argparse.ArgumentParser(description="Import TracingInsights lap data to MongoDB")
-    parser.add_argument("--year", type=int, default=int(os.environ.get("YEAR", str(datetime.now().year))))
+    year_env = os.environ.get("YEAR", "").strip()
+    default_year = int(year_env) if year_env else datetime.now().year
+    parser.add_argument("--year", type=int, default=default_year)
     parser.add_argument("--force", action="store_true", default=os.environ.get("FORCE", "false").lower() == "true")
     args = parser.parse_args()
     
