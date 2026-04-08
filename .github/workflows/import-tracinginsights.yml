@@ -23,7 +23,11 @@ jobs:
     name: Sync TracingInsights Repository
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    
+    environment: MONGODB_URI
+    outputs:
+      year: ${{ steps.changes.outputs.year }}
+      changed: ${{ steps.changes.outputs.changed }}
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -71,6 +75,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     needs: sync-tracinginsights
+    environment: MONGODB_URI
     
     steps:
       - name: Checkout repository
@@ -97,6 +102,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     needs: import-laps
+    environment: MONGODB_URI
     
     steps:
       - name: Checkout repository

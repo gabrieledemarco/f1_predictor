@@ -19,7 +19,8 @@ jobs:
     name: Extract Circuit Profiles from FastF1
     runs-on: ubuntu-latest
     timeout-minutes: 120
-    
+    environment: MONGODB_URI
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -47,6 +48,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     needs: extract-profiles
+    environment: MONGODB_URI
     
     steps:
       - name: Checkout repository

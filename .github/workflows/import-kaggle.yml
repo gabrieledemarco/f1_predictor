@@ -25,7 +25,8 @@ jobs:
     name: Download Kaggle Dataset
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    
+    environment: MONGODB_URI
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -39,28 +40,32 @@ jobs:
         run: pip install kagglehub pandas pyarrow
 
       - name: Configure Kaggle
+        env:
+          KAGGLE_USERNAME: ${{ secrets.KAGGLE_USERNAME }}
+          KAGGLE_KEY: ${{ secrets.KAGGLE_KEY }}
         run: |
           mkdir -p ~/.kaggle
-          echo '{"username":"$KAGGLE_USERNAME","key":"$KAGGLE_KEY"}' > ~/.kaggle/kaggle.json
+          echo "{\"username\":\"$KAGGLE_USERNAME\",\"key\":\"$KAGGLE_KEY\"}" > ~/.kaggle/kaggle.json
           chmod 600 ~/.kaggle/kaggle.json
 
       - name: Download dataset
         id: download
-        run: |
-          python -c "
-          import kagglehub
-          path = kagglehub.dataset_download('jtrotman/formula-1-race-data')
-          print(f'Dataset downloaded to: {path}')
-          with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
-              f.write('path=' + path)
-          " >> $GITHUB_OUTPUT
         env:
           KAGGLE_USERNAME: ${{ secrets.KAGGLE_USERNAME }}
           KAGGLE_KEY: ${{ secrets.KAGGLE_KEY }}
+        run: |
+          python -c "
+          import os, kagglehub
+          path = kagglehub.dataset_download('jtrotman/formula-1-race-data')
+          print(f'Dataset downloaded to: {path}')
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
+              f.write('path=' + path + '\n')
+          "
 
       - name: Extract and move data
         run: |
-          DATASET_PATH=$(cat $GITHUB_OUTPUT | grep path | cut -d: -f2 | tr -d ' ')
+          mkdir -p data/kaggle_raw
+          DATASET_PATH=$(grep '^path=' "$GITHUB_OUTPUT" | tail -1 | cut -d= -f2-)
           mv "$DATASET_PATH"/* data/kaggle_raw/
           rm -rf "$DATASET_PATH"
           ls -la data/kaggle_raw/
@@ -70,6 +75,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     needs: download-kaggle
+    environment: MONGODB_URI
     
     steps:
       - name: Checkout repository
@@ -96,6 +102,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     needs: import-kaggle
+    environment: MONGODB_URI
     
     steps:
       - name: Checkout repository

@@ -27,7 +27,8 @@ jobs:
     name: Import Races from Jolpica API
     runs-on: ubuntu-latest
     timeout-minutes: 60
-    
+    environment: MONGODB_URI
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -82,6 +83,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     needs: import-races
+    continue-on-error: true  # scripts/import_standings.py non ancora implementato
+    environment: MONGODB_URI
     
     steps:
       - name: Checkout repository

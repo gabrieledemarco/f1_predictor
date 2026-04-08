@@ -24,7 +24,8 @@ jobs:
     name: Fetch Odds from The Odds API
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    
+    environment: MONGODB_URI
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -51,6 +52,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     needs: fetch-odds
+    continue-on-error: true  # scripts/compute_calibration_records.py non ancora implementato
+    environment: MONGODB_URI
     
     steps:
       - name: Checkout repository
