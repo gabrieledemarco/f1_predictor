@@ -2,11 +2,11 @@
 """
 Import TracingInsights Lap Data to MongoDB
 
-Parses TracingInsights CSV files and imports lap-by-lap telemetry
+Parses TracingInsights CSV files (Ergast format) and imports lap-by-lap data
 into MongoDB f1_lap_times collection.
 
 Usage:
-    python scripts/import_tracinginsights.py
+    python scripts/import_tracinginsights.py [--year YEAR] [--force]
 """
 
 import os
@@ -15,11 +15,10 @@ import csv
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, Optional
 
-import pandas as pd
 from dotenv import load_dotenv
-from pymongo import MongoClient, UpdateOne, InsertOne
+from pymongo import MongoClient, UpdateOne
 from pymongo.errors import PyMongoError
 
 load_dotenv()
@@ -35,91 +34,103 @@ def get_mongo_client():
     return client[mongo_db]
 
 
-def parse_lap_time(lap_time_str: str) -> Optional[float]:
-    """Parse lap time string to milliseconds."""
-    if not lap_time_str or lap_time_str == "":
-        return None
-    try:
-        parts = lap_time_str.strip().split(":")
-        if len(parts) == 3:
-            minutes, seconds, ms = parts
-            return int(minutes) * 60000 + float(seconds) * 1000 + float(ms)
-        elif len(parts) == 2:
-            seconds, ms = parts
-            return float(seconds) * 1000 + float(ms)
-        return float(lap_time_str)
-    except (ValueError, IndexError):
-        return None
-
-
-def get_year_from_path(circuit_path: Path) -> Optional[int]:
-    """Extract year from path like data/racedata/2024/Bahrain"""
-    parts = circuit_path.parts
-    for i, part in enumerate(parts):
-        if part in ["racedata", "racedata_tmp"] and i + 1 < len(parts):
-            try:
-                return int(parts[i + 1])
-            except ValueError:
-                continue
-    return None
-
-
-def get_round_number(db, year: int, circuit_ref: str) -> int:
-    """Get the round number for a circuit in a given year."""
-    race = db.f1_races.find_one({"year": year, "circuit_ref": circuit_ref})
-    if race:
-        return race.get("round", 0)
-    return 0
-
-
-def import_laps_csv(db, csv_path: Path, year: int) -> int:
-    """Import laps from a single CSV file."""
-    circuit_ref = csv_path.parent.name.lower().replace(" ", "_").replace("-", "_")
-    round_num = get_round_number(db, year, circuit_ref)
-    
-    if round_num == 0:
-        print(f"  Warning: No race found for {year} {circuit_ref}, skipping")
-        return 0
-    
-    imported_count = 0
-    operations = []
-    
-    with open(csv_path, "r", encoding="utf-8") as f:
+def load_race_mapping(races_csv_path: Path, target_year: int) -> Dict[int, dict]:
+    """Load races.csv and return mapping from raceId to {year, round, circuitId}."""
+    mapping = {}
+    with open(races_csv_path, "r", encoding="utf-8") as f:
         reader = csv.DictReader(f)
         for row in reader:
-            driver_code = row.get("Driver", "").strip()
-            if not driver_code:
+            year = int(row.get("year", 0))
+            if year != target_year:
+                continue
+            race_id = int(row.get("raceId", 0))
+            mapping[race_id] = {
+                "year": year,
+                "round": int(row.get("round", 0)),
+                "circuit_id": int(row.get("circuitId", 0)),
+                "name": row.get("name", ""),
+            }
+    return mapping
+
+
+def load_driver_mapping(drivers_csv_path: Path) -> Dict[int, str]:
+    """Load drivers.csv and return mapping from driverId to driver code."""
+    mapping = {}
+    with open(drivers_csv_path, "r", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            driver_id = int(row.get("driverId", 0))
+            code = row.get("code", "").strip()
+            if code and code != "\\N":
+                mapping[driver_id] = code
+            else:
+                driver_ref = row.get("driverRef", "").strip()
+                if driver_ref:
+                    mapping[driver_id] = driver_ref[:3].upper()
+    return mapping
+
+
+def get_circuit_ref(db, circuit_id: int) -> str:
+    """Get circuit_ref from MongoDB f1_races by circuitId."""
+    race = db.f1_races.find_one({"circuit_id": circuit_id})
+    if race:
+        return race.get("circuit_ref", f"circuit_{circuit_id}")
+    return f"circuit_{circuit_id}"
+
+
+def import_laps_csv(db, laps_csv_path: Path, race_mapping: Dict[int, dict], 
+                    driver_mapping: Dict[int, str], target_year: int, force: bool) -> int:
+    """Import laps from lap_times.csv file."""
+    imported_count = 0
+    skipped_count = 0
+    operations = []
+    
+    with open(laps_csv_path, "r", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            race_id = int(row.get("raceId", 0))
+            
+            if race_id not in race_mapping:
+                skipped_count += 1
                 continue
             
-            lap_number = int(row.get("LapNumber", 0))
-            lap_time_raw = row.get("LapTime", "")
-            lap_time_ms = parse_lap_time(lap_time_raw)
+            race_info = race_mapping[race_id]
+            if race_info["year"] != target_year:
+                continue
+            
+            driver_id = int(row.get("driverId", 0))
+            driver_code = driver_mapping.get(driver_id, f"D{driver_id}")
+            
+            lap_number = int(row.get("lap", 0))
+            position = int(row.get("position", 0)) if row.get("position") else 0
+            
+            milliseconds_raw = row.get("milliseconds", "")
+            lap_time_ms = None
+            if milliseconds_raw and milliseconds_raw != "\\N":
+                try:
+                    lap_time_ms = float(milliseconds_raw)
+                except ValueError:
+                    pass
             
             if lap_time_ms is None:
+                skipped_count += 1
                 continue
             
-            fuel_corrected_ms = float(row.get("FuelCorrectedLapTime", lap_time_raw)) if row.get("FuelCorrectedLapTime") else lap_time_ms
+            circuit_ref = get_circuit_ref(db, race_info["circuit_id"])
+            year = race_info["year"]
+            round_num = race_info["round"]
             
-            compound = row.get("Compound", "UNKNOWN")
-            tyre_life = int(row.get("TyreLife", 0))
-            is_personal_best = row.get("IsPersonalBest", "False").lower() == "true"
-            is_valid = row.get("IsAccurate", "True").lower() == "true" and row.get("TrackStatus", "1") == "1"
-            team = row.get("Team", "").strip()
+            doc_id = f"{year}_R{round_num}_{circuit_ref}_{driver_code}_L{lap_number}"
             
             doc = {
-                "_id": f"{year}_{circuit_ref}_{driver_code}_{lap_number}",
+                "_id": doc_id,
                 "year": year,
                 "round": round_num,
                 "circuit_ref": circuit_ref,
                 "driver_code": driver_code,
-                "team": team.lower().replace(" ", "_") if team else "",
                 "lap_number": lap_number,
+                "position": position,
                 "lap_time_ms": lap_time_ms,
-                "fuel_corrected_ms": fuel_corrected_ms,
-                "compound": compound.upper(),
-                "tyre_life": tyre_life,
-                "is_personal_best": is_personal_best,
-                "is_valid": is_valid,
                 "imported_at": datetime.utcnow().isoformat() + "Z",
                 "source": "tracinginsights",
             }
@@ -131,29 +142,17 @@ def import_laps_csv(db, csv_path: Path, year: int) -> int:
             ))
             
             if len(operations) >= 1000:
-                db.f1_lap_times.bulk_write(operations, ordered=False)
-                imported_count += len(operations)
+                if operations:
+                    result = db.f1_lap_times.bulk_write(operations, ordered=False)
+                    imported_count += result.upserted_count + result.modified_count
                 operations = []
         
         if operations:
-            db.f1_lap_times.bulk_write(operations, ordered=False)
-            imported_count += len(operations)
+            result = db.f1_lap_times.bulk_write(operations, ordered=False)
+            imported_count += result.upserted_count + result.modified_count
     
-    db.f1_import_log.update_one(
-        {
-            "source": "tracinginsights",
-            "year": year,
-            "circuit_ref": circuit_ref,
-            "type": "laps",
-        },
-        {
-            "$set": {
-                "imported_at": datetime.utcnow().isoformat() + "Z",
-                "laps_count": imported_count,
-            }
-        },
-        upsert=True
-    )
+    if skipped_count > 0:
+        print(f"    (skipped {skipped_count} rows without valid lap times)")
     
     return imported_count
 
@@ -180,6 +179,25 @@ def main():
         print("  git clone https://github.com/TracingInsights/RaceData.git data/racedata")
         sys.exit(1)
     
+    data_path = racedata_path / "data"
+    if not data_path.exists():
+        print(f"[ERROR] {data_path} directory not found")
+        sys.exit(1)
+    
+    laps_csv = data_path / "lap_times.csv"
+    races_csv = data_path / "races.csv"
+    drivers_csv = data_path / "drivers.csv"
+    
+    if not laps_csv.exists():
+        print(f"[ERROR] {laps_csv} not found")
+        sys.exit(1)
+    if not races_csv.exists():
+        print(f"[ERROR] {races_csv} not found")
+        sys.exit(1)
+    if not drivers_csv.exists():
+        print(f"[ERROR] {drivers_csv} not found")
+        sys.exit(1)
+    
     try:
         db = get_mongo_client()
         print("Connected to MongoDB")
@@ -187,41 +205,50 @@ def main():
         db.f1_lap_times.create_index([
             ("year", 1), ("round", 1), ("driver_code", 1)
         ])
-        db.f1_lap_times.create_index([("circuit_ref", 1), ("compound", 1)])
-        db.f1_lap_times.create_index([("year", 1), ("is_valid", 1)])
+        db.f1_lap_times.create_index([("year", 1), ("lap_number", 1)])
+        db.f1_lap_times.create_index([("circuit_ref", 1)])
         
-        total_laps = 0
+        print("\nLoading race mapping...")
+        race_mapping = load_race_mapping(races_csv, args.year)
+        print(f"  Found {len(race_mapping)} races for {args.year}")
         
-        year_path = racedata_path / str(args.year)
-        if not year_path.exists():
-            print(f"[ERROR] Year {args.year} not found in racedata")
+        if not race_mapping:
+            print(f"[ERROR] No races found for year {args.year}")
             sys.exit(1)
         
-        circuits = sorted([d for d in year_path.iterdir() if d.is_dir()])
-        print(f"\nFound {len(circuits)} circuits for {args.year}")
+        print("Loading driver mapping...")
+        driver_mapping = load_driver_mapping(drivers_csv)
+        print(f"  Found {len(driver_mapping)} drivers")
         
-        for circuit_dir in circuits:
-            laps_file = circuit_dir / "laps.csv"
-            if not laps_file.exists():
-                print(f"  {circuit_dir.name}: No laps.csv found, skipping")
-                continue
-            
-            print(f"  Importing {circuit_dir.name}...")
-            count = import_laps_csv(db, laps_file, args.year)
-            if count > 0:
-                print(f"    -> {count} laps imported")
-            total_laps += count
-            time.sleep(0.1)
+        print(f"\nImporting lap times from {args.year}...")
+        total_laps = import_laps_csv(db, laps_csv, race_mapping, driver_mapping, args.year, args.force)
         
         print("\n" + "=" * 60)
         print(f"COMPLETED: {total_laps} laps imported")
         print("=" * 60)
+        
+        db.f1_import_log.update_one(
+            {
+                "source": "tracinginsights",
+                "year": args.year,
+                "type": "laps",
+            },
+            {
+                "$set": {
+                    "imported_at": datetime.utcnow().isoformat() + "Z",
+                    "laps_count": total_laps,
+                }
+            },
+            upsert=True
+        )
         
     except PyMongoError as e:
         print(f"\n[MongoDB Error] {e}")
         sys.exit(1)
     except Exception as e:
         print(f"\n[Error] {e}")
+        import traceback
+        traceback.print_exc()
         sys.exit(1)
 
 
