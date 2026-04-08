@@ -19,67 +19,37 @@ env:
   MONGO_DB: ${{ vars.MONGO_DB || 'betbreaker' }}
 
 jobs:
-  sync-tracinginsights:
-    name: Sync TracingInsights Repository
+  # ── Job unico: clone + import lap times ────────────────────────────────
+  # NOTA: sync e import devono stare nello stesso job perché i runner
+  # GitHub Actions sono efimeri — il filesystem non è condiviso tra job.
+  sync-and-import:
+    name: Sync TracingInsights & Import to MongoDB
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 60
     environment: MONGODB_URI
     outputs:
-      year: ${{ steps.changes.outputs.year }}
-      changed: ${{ steps.changes.outputs.changed }}
+      year: ${{ steps.setup-year.outputs.year }}
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Determine year
+        id: setup-year
+        env:
+          YEAR: ${{ inputs.year || '' }}
+        run: |
+          CURRENT_YEAR=$(date +%Y)
+          SELECTED_YEAR="${YEAR:-$CURRENT_YEAR}"
+          echo "year=$SELECTED_YEAR" >> $GITHUB_OUTPUT
+          echo "Anno selezionato: $SELECTED_YEAR"
 
       - name: Clone TracingInsights RaceData
         run: |
-          git clone --depth 1 https://github.com/TracingInsights/RaceData.git data/racedata_tmp
-          rm -rf data/racedata_tmp/.git
-          rm -rf data/racedata_tmp/.github
-          ls -la data/racedata_tmp/
-
-      - name: Detect changed circuits
-        id: changes
-        run: |
-          CURRENT_YEAR=$(date +%Y)
-          if [ -n "$YEAR" ] && [ "$YEAR" != "" ]; then
-            SELECTED_YEAR="$YEAR"
-          else
-            SELECTED_YEAR="$CURRENT_YEAR"
-          fi
-          
-          if [ -d "data/racedata/$SELECTED_YEAR" ]; then
-            DIFF=$(diff -rq data/racedata/$SELECTED_YEAR data/racedata_tmp/$SELECTED_YEAR 2>/dev/null || true)
-            if [ -z "$DIFF" ]; then
-              echo "changed=false" >> $GITHUB_OUTPUT
-            else
-              echo "changed=true" >> $GITHUB_OUTPUT
-            fi
-          else
-            echo "changed=true" >> $GITHUB_OUTPUT
-          fi
-          echo "year=$SELECTED_YEAR" >> $GITHUB_OUTPUT
-        env:
-          YEAR: ${{ inputs.year || '' }}
-
-      - name: Replace racedata
-        if: steps.changes.outputs.changed == 'true'
-        run: |
-          rm -rf data/racedata
-          mv data/racedata_tmp data/racedata
-          echo "Racedata updated for year ${{ steps.changes.outputs.year }}"
-
-  import-laps:
-    name: Import Lap Times to MongoDB
-    runs-on: ubuntu-latest
-    timeout-minutes: 45
-    needs: sync-tracinginsights
-    environment: MONGODB_URI
-    
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+          git clone --depth 1 https://github.com/TracingInsights/RaceData.git data/racedata
+          rm -rf data/racedata/.git
+          rm -rf data/racedata/.github
+          echo "RaceData clonato: $(find data/racedata -name '*.csv' | wc -l) CSV files"
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -89,21 +59,22 @@ jobs:
       - name: Install dependencies
         run: pip install pymongo python-dotenv pandas
 
-      - name: Import lap times
+      - name: Import lap times → MongoDB
         run: python scripts/import_tracinginsights.py
         env:
           MONGODB_URI: ${{ secrets.MONGODB_URI }}
           MONGO_DB: ${{ vars.MONGO_DB || 'betbreaker' }}
-          YEAR: ${{ needs.sync-tracinginsights.outputs.year }}
+          YEAR: ${{ steps.setup-year.outputs.year }}
           FORCE: ${{ inputs.force || 'false' }}
 
+  # ── Job separato: calcolo pace (legge da MongoDB, non dal filesystem) ──
   compute-pace:
     name: Compute Constructor Pace Observations
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    needs: import-laps
+    needs: sync-and-import
     environment: MONGODB_URI
-    
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -121,14 +92,14 @@ jobs:
         env:
           MONGODB_URI: ${{ secrets.MONGODB_URI }}
           MONGO_DB: ${{ vars.MONGO_DB || 'betbreaker' }}
-          YEAR: ${{ needs.sync-tracinginsights.outputs.year }}
+          YEAR: ${{ needs.sync-and-import.outputs.year }}
 
   notify:
     name: Notify on failure
     runs-on: ubuntu-latest
-    needs: [sync-tracinginsights, import-laps, compute-pace]
+    needs: [sync-and-import, compute-pace]
     if: failure()
-    
+
     steps:
       - name: Create failure summary
         run: |
