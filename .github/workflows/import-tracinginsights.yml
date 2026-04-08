@@ -24,6 +24,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     environment: MONGODB_URI
+    outputs:
+      year: ${{ steps.setup-year.outputs.year }}
 
     steps:
       - name: Checkout repository
@@ -86,6 +88,7 @@ jobs:
         env:
           MONGODB_URI: ${{ secrets.MONGODB_URI }}
           MONGO_DB: ${{ vars.MONGO_DB || 'betbreaker' }}
+          YEAR: ${{ needs.sync-and-import.outputs.year }}
 
   notify:
     name: Notify on failure
