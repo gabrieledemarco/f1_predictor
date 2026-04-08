@@ -53,7 +53,7 @@ jobs:
       - name: Install dependencies
         run: |
           pip install --upgrade pip
-          pip install scikit-learn scipy numpy pandas pymongo[srv] requests
+          pip install scikit-learn scipy numpy pandas pymongo[srv] requests python-dotenv
 
       # ── Dati storici ──────────────────────────────────────────────
       - name: Clone TracingInsights RaceData
