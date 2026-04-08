@@ -10,9 +10,9 @@ on:
   workflow_dispatch:
     inputs:
       year:
-        description: "Anno di validazione (es. 2024 per validare sul 2024 completo)"
+        description: "Anno di validazione (es. 2023 per validare sul 2023 completo)"
         required: true
-        default: "2024"
+        default: "2023"
       through_round:
         description: "Ultimo round completato (es. 24 per stagione completa)"
         required: true
@@ -102,12 +102,12 @@ jobs:
       - name: Determine training parameters
         id: params
         run: |
-          YEAR="${{ github.event.inputs.year || '2024' }}"
-          ROUND="${{ github.event.inputs.through_round || '24' }}"
+          YEAR="${{ github.event.inputs.year || '2023' }}"
+          ROUND="${{ github.event.inputs.through_round || '22' }}"
           DRY="${{ github.event.inputs.dry_run || 'false' }}"
           MC="${{ github.event.inputs.n_mc_sim || '50000' }}"
           # val_from = YEAR per validare solo sull'anno target
-          # Con YEAR=2024, val_from=2024: train=2018-2023, test=2024
+          # Con YEAR=2023, val_from=2023: train=2018-2022, test=2023
           VAL_FROM=$YEAR
           echo "year=$YEAR"       >> $GITHUB_OUTPUT
           echo "round=$ROUND"     >> $GITHUB_OUTPUT

@@ -2,7 +2,7 @@
 
 > A 4-layer probabilistic machine learning pipeline for Formula 1 race outcome prediction and betting edge detection.
 
-Built on top of real historical data (Jolpica/Ergast + TracingInsights), the system computes calibrated win/podium probabilities for each driver and exposes them as actionable edges against bookmaker odds.
+Built on top of real historical data from MongoDB (imported via GitHub Actions from Jolpica + TracingInsights), the system computes calibrated win/podium probabilities for each driver and exposes them as actionable edges against bookmaker odds.
 
 ---
 
@@ -11,9 +11,15 @@ Built on top of real historical data (Jolpica/Ergast + TracingInsights), the sys
 The pipeline is composed of 4 sequential layers:
 
 ```
-Raw Data (Jolpica + TracingInsights)
-         │
-         ▼
+Raw Data (Jolpica + TracingInsights + Pinnacle Odds)
+          │
+          ▼ (GitHub Actions Workflows)
+   ┌─────────────────────────────────────────┐
+   │          MONGODB ATLAS                  │
+   │  f1_races, f1_lap_times, f1_pace_obs   │
+   └────────────────┬────────────────────────┘
+                   │
+                   ▼
 ┌─────────────────────────────┐
 │  Layer 1a — Driver Skill    │  TrueSkill Through Time (TTT)
 │  Layer 1b — Machine Pace    │  Kalman Filter per constructor
@@ -57,10 +63,7 @@ f1_predictor/
 ├── core/
 │   ├── db.py                   # MongoDB connection helper
 │   └── db_artifacts.py         # GridFS artifact store (save/load/rollback)
-├── data/
-│   ├── cache/jolpica/          # Jolpica JSON cache (auto-populated)
-│   ├── racedata/               # TracingInsights CSV clone (git submodule)
-│   └── pinnacle_odds/          # Historical Pinnacle odds JSONL (optional)
+├── data/                       # MongoDB loaders (see docs/DATA_ARCHITECTURE_MAPPING.md)
 ├── f1_predictor/
 │   ├── domain/entities.py      # Dataclasses: Race, RaceResult, RaceProbability…
 │   ├── models/
@@ -118,13 +121,17 @@ pip install scikit-learn scipy numpy pandas pymongo[srv] requests
 # 3. Install the f1_predictor package in editable mode
 pip install -e ./f1_predictor
 
-# 4. Clone TracingInsights race data (optional but recommended)
-git clone https://github.com/TracingInsights/RaceData.git data/racedata
+# 4. Configure MongoDB Atlas (via GitHub Actions - see below)
+#    Local .env is optional for local development (uses synthetic data fallback)
 
-# 5. Configure MongoDB Atlas
-cp .env.example .env
-# Edit .env and set: MONGODB_URI=mongodb+srv://<user>:<password>@<cluster>
+# 5. Data is automatically imported via GitHub Actions workflows:
+#    - import-jolpica.yml: Race results, standings
+#    - import-tracinginsights.yml: Lap times, pace observations
+#    - import-pinnacle-odds.yml: Betting odds for calibration
+#    - import-circuit-profiles.yml: Circuit speed profiles
 ```
+
+**Note:** All data is imported to MongoDB via GitHub Actions workflows. The `.env` file is only needed for local development with synthetic fallback data.
 
 ---
 
@@ -205,13 +212,34 @@ Brier Score is the primary criterion for accepting or rejecting a new model vers
 
 ## Data Sources
 
+> **⚠️ Migration Notice**: The data pipeline has been updated to use MongoDB as the single source of truth. All data is now imported via GitHub Actions workflows and loaded from MongoDB. See [DATA_ARCHITECTURE_MAPPING.md](docs/DATA_ARCHITECTURE_MAPPING.md) for details.
+
+### Current Architecture (MongoDB-based)
+
+| Source | Import Method | Collection | Notes |
+|--------|---------------|------------|-------|
+| Jolpica API | `import-jolpica.yml` workflow | `f1_races`, `f1_driver_standings` | Auto-scheduled via GitHub Actions |
+| TracingInsights | `import-tracinginsights.yml` workflow | `f1_lap_times` | Computes `f1_pace_observations` |
+| The Odds API | `import-pinnacle-odds.yml` workflow | `f1_pinnacle_odds` | For Layer 4 calibration |
+| FastF1 | `import-circuit-profiles.yml` workflow | `f1_circuit_profiles` | Circuit speed profiles |
+
+### Legacy Sources (Deprecated)
+
+The following sources are deprecated but still documented for reference to older versions:
+
 | Source | Usage | Notes |
 |--------|-------|-------|
-| [Jolpica API](https://github.com/jolpica/jolpica-f1) | Race results, driver/constructor history | Ergast-compatible fork, auto-cached locally |
-| [TracingInsights RaceData](https://github.com/TracingInsights/RaceData) | Constructor pace telemetry | Clone to `data/racedata/` |
-| Betfair Exchange Historical | Historical odds for calibration | Recommended for 2022–2024 backfill |
-| API-Sports | Forward odds collection | For live seasons |
+| [Jolpica API](https://github.com/jolpica/jolpica-f1) | Race results, driver/constructor history | **Deprecated**: Use MongoDB import |
+| [TracingInsights RaceData](https://github.com/TracingInsights/RaceData) | Constructor pace telemetry | **Deprecated**: Use MongoDB import |
 | Synthetic fallback | Development/testing | Auto-generated if no real data available |
+
+### Manual Data Import (Legacy)
+
+For manual/local development (not recommended for production):
+```bash
+# Clone TracingInsights data (if needed for local debugging)
+git clone https://github.com/TracingInsights/RaceData.git data/racedata
+```
 
 ---
 

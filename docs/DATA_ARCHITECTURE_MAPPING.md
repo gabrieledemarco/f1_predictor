@@ -324,6 +324,23 @@ Raw Data Sources (Jolpica + TracingInsights + The Odds API + FastF1)
 
 ---
 
+## Deprecated Data Loaders (DEPRECATED)
+
+The following legacy loaders are deprecated and will be removed in a future version.
+All data should now be imported via GitHub Actions workflows and loaded from MongoDB.
+
+| Loader | Replacement | Status |
+|--------|-------------|--------|
+| `loader_jolpica.py` (JolpicaLoader) | MongoRaceLoader | ⚠️ Deprecated |
+| `loader_tracinginsights.py` (TracingInsightsLoader) | MongoPaceLoader | ⚠️ Deprecated |
+| `loader_kaggle.py` (KaggleRaceDataLoader) | MongoPaceLoader | ⚠️ Deprecated |
+| `loader_odds.py` (OddsLoader) | MongoOddsLoader | ⚠️ Deprecated |
+
+The legacy loaders are kept only for backward compatibility with existing code.
+New code should use MongoDB loaders imported from `f1_predictor.data`.
+
+---
+
 ## Gap Analysis
 
 ### Critici (Bloccano training)
@@ -340,6 +357,25 @@ Raw Data Sources (Jolpica + TracingInsights + The Odds API + FastF1)
 |-------|--------|----------|
 | `f1_lap_times` = 12,000 (incompleto) | Layer 1b准确性 ridotta | Import completo da TracingInsights |
 | `jolpica_cache` = 39 (vuoto) | Refresh dati lento | Implementare caching strategy |
+
+---
+
+## Data Sources Summary
+
+### Current Active Data Flow (MongoDB-based)
+
+```
+GitHub Actions Workflows → MongoDB Atlas → train_pipeline.py (MongoDB Loaders)
+```
+
+### Sources Still Need Integration
+
+| Source | Data Available | Current Status |
+|--------|-----------------|-----------------|
+| Circuit Profiles (FastF1) | Speed profiles, corner types, throttle % | Not imported to MongoDB |
+| Pit Stops (Kaggle) | Strategy, duration | Not integrated in ML model |
+| Status Data (Kaggle) | DNF reasons, safety cars | Not integrated in ML model |
+| Qualifying Data | Q1/Q2/Q3 times | In f1_races but not used as feature |
 
 ---
 

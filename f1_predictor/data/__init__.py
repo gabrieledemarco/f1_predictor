@@ -4,6 +4,16 @@ Data Module - Unified Data Loading
 This module provides unified data loading from MongoDB.
 All data is imported via GitHub Actions workflows and stored in MongoDB.
 
+DEPRECATED LEGACY LOADERS (for backward compatibility only):
+    - loader_jolpica.JolpicaLoader (use MongoRaceLoader instead)
+    - loader_tracinginsights.TracingInsightsLoader (use MongoPaceLoader instead)
+    - loader_kaggle.KaggleRaceDataLoader (use MongoPaceLoader instead)
+    - loader_odds.OddsLoader (use MongoOddsLoader instead)
+
+These legacy loaders are kept only for compatibility with existing code
+and will be removed in a future version. All data should now be imported
+via GitHub Actions workflows.
+
 Usage in train_pipeline.py:
     from data import MongoRaceLoader, MongoPaceLoader, MongoOddsLoader
     

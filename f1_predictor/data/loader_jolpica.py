@@ -1,6 +1,15 @@
 """
 data/loader_jolpica.py
-======================
+=====================
+DEPRECATED: This loader is deprecated. Use MongoDB loaders instead.
+    - Import data via GitHub Actions workflows (import-jolpica.yml)
+    - Load via: from f1_predictor.data import MongoRaceLoader
+
+This module is kept only for backward compatibility and will be removed
+in a future version.
+
+---
+
 Carica dati storici F1 via Jolpica API (fork Ergast mantenuto).
 Endpoint base: https://api.jolpi.ca/ergast/f1/
 

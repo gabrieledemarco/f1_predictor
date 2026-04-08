@@ -275,14 +275,16 @@ def run_training(args) -> dict:
     _log_metrics(val_metrics)
 
     # ── 4. Fit finale su TUTTI i dati ────────────────────────────────
+    # Usa MC ridotto per speed: il fit è iterativo, non serve alta precisione
+    n_mc_final = min(args.n_mc_sim, 10_000)  # Max 10k per final fit
     _step_start(4, f"Fit finale su tutti i {len(races)} gare  (TTT + Kalman)")
     pipeline_final = F1PredictionPipeline(
         ttt_config=TTTConfig(),
         kalman_config=KalmanConfig(),
-        sim_config=RaceSimConfig(n_simulations=args.n_mc_sim),
+        sim_config=RaceSimConfig(n_simulations=n_mc_final),
     )
     pipeline_final.fit(races, verbose=False)
-    _step_done(4)
+    _step_done(4, f"MC={n_mc_final:,}")
 
     # ── 5. Ridge ensemble ────────────────────────────────────────────
     _step_start(5, f"Fit Ridge ensemble  (alpha={args.ridge_alpha})")
