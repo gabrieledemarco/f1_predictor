@@ -91,17 +91,19 @@ def import_laps_csv(db, csv_path: Path, year: int) -> int:
             if not driver_code:
                 continue
             
-            lap_number = int(row.get("LapNumber", 0))
+            lap_number = int(row.get("LapNumber") or 0)
             lap_time_raw = row.get("LapTime", "")
             lap_time_ms = parse_lap_time(lap_time_raw)
-            
+
             if lap_time_ms is None:
                 continue
-            
-            fuel_corrected_ms = float(row.get("FuelCorrectedLapTime", lap_time_raw)) if row.get("FuelCorrectedLapTime") else lap_time_ms
-            
+
+            # FuelCorrectedLapTime non è sempre presente nei CSV TracingInsights
+            fuel_raw = row.get("FuelCorrectedLapTime", "")
+            fuel_corrected_ms = parse_lap_time(fuel_raw) if fuel_raw else lap_time_ms
+
             compound = row.get("Compound", "UNKNOWN")
-            tyre_life = int(row.get("TyreLife", 0))
+            tyre_life = int(row.get("TyreLife") or 0)
             is_personal_best = row.get("IsPersonalBest", "False").lower() == "true"
             is_valid = row.get("IsAccurate", "True").lower() == "true" and row.get("TrackStatus", "1") == "1"
             team = row.get("Team", "").strip()
@@ -192,8 +194,9 @@ def main():
         
         year_path = racedata_path / str(args.year)
         if not year_path.exists():
-            print(f"[ERROR] Year {args.year} not found in racedata")
-            sys.exit(1)
+            print(f"[WARNING] Year {args.year} not found in racedata — nessun dato da importare")
+            print(f"Anni disponibili: {[d.name for d in racedata_path.iterdir() if d.is_dir()]}")
+            sys.exit(0)
         
         circuits = sorted([d for d in year_path.iterdir() if d.is_dir()])
         print(f"\nFound {len(circuits)} circuits for {args.year}")
