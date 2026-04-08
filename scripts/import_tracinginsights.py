@@ -34,8 +34,21 @@ def get_mongo_client():
     return client[mongo_db]
 
 
-def load_race_mapping(races_csv_path: Path, target_year: int) -> Dict[int, dict]:
-    """Load races.csv and return mapping from raceId to {year, round, circuitId}."""
+def load_circuit_mapping(circuits_csv_path: Path) -> Dict[int, str]:
+    """Load circuits.csv and return mapping from circuitId to circuitRef."""
+    mapping = {}
+    with open(circuits_csv_path, "r", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            circuit_id = int(row.get("circuitId", 0))
+            circuit_ref = row.get("circuitRef", "").strip().lower()
+            if circuit_ref and circuit_ref != "\\N":
+                mapping[circuit_id] = circuit_ref
+    return mapping
+
+
+def load_race_mapping(races_csv_path: Path, target_year: int, circuit_mapping: Dict[int, str]) -> Dict[int, dict]:
+    """Load races.csv and return mapping from raceId to {year, round, circuit_ref}."""
     mapping = {}
     with open(races_csv_path, "r", encoding="utf-8") as f:
         reader = csv.DictReader(f)
@@ -44,10 +57,12 @@ def load_race_mapping(races_csv_path: Path, target_year: int) -> Dict[int, dict]
             if year != target_year:
                 continue
             race_id = int(row.get("raceId", 0))
+            circuit_id = int(row.get("circuitId", 0))
+            circuit_ref = circuit_mapping.get(circuit_id, f"circuit_{circuit_id}")
             mapping[race_id] = {
                 "year": year,
                 "round": int(row.get("round", 0)),
-                "circuit_id": int(row.get("circuitId", 0)),
+                "circuit_ref": circuit_ref,
                 "name": row.get("name", ""),
             }
     return mapping
@@ -68,14 +83,6 @@ def load_driver_mapping(drivers_csv_path: Path) -> Dict[int, str]:
                 if driver_ref:
                     mapping[driver_id] = driver_ref[:3].upper()
     return mapping
-
-
-def get_circuit_ref(db, circuit_id: int) -> str:
-    """Get circuit_ref from MongoDB f1_races by circuitId."""
-    race = db.f1_races.find_one({"circuit_id": circuit_id})
-    if race:
-        return race.get("circuit_ref", f"circuit_{circuit_id}")
-    return f"circuit_{circuit_id}"
 
 
 def import_laps_csv(db, laps_csv_path: Path, race_mapping: Dict[int, dict], 
@@ -116,7 +123,7 @@ def import_laps_csv(db, laps_csv_path: Path, race_mapping: Dict[int, dict],
                 skipped_count += 1
                 continue
             
-            circuit_ref = get_circuit_ref(db, race_info["circuit_id"])
+            circuit_ref = race_info["circuit_ref"]
             year = race_info["year"]
             round_num = race_info["round"]
             
@@ -208,8 +215,17 @@ def main():
         db.f1_lap_times.create_index([("year", 1), ("lap_number", 1)])
         db.f1_lap_times.create_index([("circuit_ref", 1)])
         
+        print("Loading circuit mapping...")
+        circuits_csv = data_path / "circuits.csv"
+        if not circuits_csv.exists():
+            print(f"[WARNING] {circuits_csv} not found - circuit_ref will use circuit ID")
+            circuit_mapping = {}
+        else:
+            circuit_mapping = load_circuit_mapping(circuits_csv)
+            print(f"  Found {len(circuit_mapping)} circuits")
+
         print("\nLoading race mapping...")
-        race_mapping = load_race_mapping(races_csv, args.year)
+        race_mapping = load_race_mapping(races_csv, args.year, circuit_mapping)
         print(f"  Found {len(race_mapping)} races for {args.year}")
         
         if not race_mapping:
