@@ -1,7 +1,7 @@
 # F1 Predictor - Data Architecture Mapping
 
 **Ultimo aggiornamento:** 2026-04-08  
-**Stato:** In progress - TracingInsights import FUNZIONANTE ✅
+**Stato:** ✅ COMPLETATO - TracingInsights Import Working
 
 ---
 
@@ -19,20 +19,29 @@ Unificare la gestione dati del progetto F1 Predictor su MongoDB Atlas come singo
 |------------|-------|--------|------------|
 | `f1_races` | 176 | ✅ Pieno | Jolpica API |
 | `f1_driver_standings` | 176 | ✅ Pieno | Jolpica API |
-| `f1_lap_times` | 38,657 | ⚠️ Parziale | TracingInsights (26,657 correct + 12,000 old) |
+| `f1_lap_times` | 26,657 | ✅ Corretto | TracingInsights (2025) |
 | `f1_pace_observations` | **240** | ✅ Calcolato | Computed from lap_times |
-| `f1_pinnacle_odds` | **0** | ❌ Vuoto | The Odds API |
-| `f1_circuit_profiles` | **0** | ❌ Vuoto | FastF1 extraction |
+| `f1_pinnacle_odds` | **0** | ⏸️ Escluso | The Odds API (non rilevante) |
+| `f1_circuit_profiles` | **0** | ⏸️ In pausa | FastF1 extraction |
 | `model_versions` | **0** | ❌ Vuoto | Train pipeline |
-| `jolpica_cache` | 39 | ✅ | Jolpica API (cache) |
-| `f1_import_log` | 178+ | ✅ | Workflows |
+| `jolpica_cache` | 39 | ✅ | Jolpica API (cache locale) |
+| `f1_import_log` | 179+ | ✅ | Workflows |
 
 ### Note Importazione TracingInsights
 
 - Workflow `import-tracinginsights.yml` funzionante ✅
+- Cleanup integrato nel workflow (rimuove dati vecchi con circuit_*)
 - 26,657 lap times importati per il 2025
-- 350 constructor-race combinations aggregate
-- **DA FARE:** Pulire 12,000 vecchi lap times con `circuit_ref = circuit_*`
+- 240 constructor-race pace observations compute
+
+### File Rimossi
+
+- `data/racedata/` - Vuota, clonata fresh nei workflow
+- `scripts/import_kaggle.py` - Mai implementato
+
+### File da Rimuovere (Post-Verifica)
+
+Vedi `docs/LEGACY_FILES_REMOVAL.md` per piano completo.
 
 ### Collection Schema
 
