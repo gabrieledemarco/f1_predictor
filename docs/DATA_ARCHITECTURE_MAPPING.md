@@ -1,7 +1,7 @@
 # F1 Predictor - Data Architecture Mapping
 
 **Ultimo aggiornamento:** 2026-04-08  
-**Stato:** In progress - Unificazione MongoDB
+**Stato:** In progress - TracingInsights import FUNZIONANTE ✅
 
 ---
 
@@ -19,13 +19,20 @@ Unificare la gestione dati del progetto F1 Predictor su MongoDB Atlas come singo
 |------------|-------|--------|------------|
 | `f1_races` | 176 | ✅ Pieno | Jolpica API |
 | `f1_driver_standings` | 176 | ✅ Pieno | Jolpica API |
-| `f1_lap_times` | 12,000 | ⚠️ Parziale | TracingInsights |
-| `f1_pace_observations` | **0** | ❌ Vuoto | Computed from lap_times |
+| `f1_lap_times` | 38,657 | ⚠️ Parziale | TracingInsights (26,657 correct + 12,000 old) |
+| `f1_pace_observations` | **240** | ✅ Calcolato | Computed from lap_times |
 | `f1_pinnacle_odds` | **0** | ❌ Vuoto | The Odds API |
 | `f1_circuit_profiles` | **0** | ❌ Vuoto | FastF1 extraction |
 | `model_versions` | **0** | ❌ Vuoto | Train pipeline |
 | `jolpica_cache` | 39 | ✅ | Jolpica API (cache) |
-| `f1_import_log` | 177 | ✅ | Workflows |
+| `f1_import_log` | 178+ | ✅ | Workflows |
+
+### Note Importazione TracingInsights
+
+- Workflow `import-tracinginsights.yml` funzionante ✅
+- 26,657 lap times importati per il 2025
+- 350 constructor-race combinations aggregate
+- **DA FARE:** Pulire 12,000 vecchi lap times con `circuit_ref = circuit_*`
 
 ### Collection Schema
 
