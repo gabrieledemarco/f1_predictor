@@ -26,7 +26,7 @@ jobs:
           python-version: '3.11'
 
       - name: Install dependencies
-        run: pip install pymongo python-dotenv
+        run: pip install pymongo python-dotenv numpy
 
       - name: Import circuit profiles
         run: python scripts/import_circuit_profiles.py
