@@ -157,6 +157,8 @@ def load_calibration_records_from_mongo(
     return records
 
 
+load_training_data = load_training_data_from_mongo
+
 __all__ = [
     "MongoRaceLoader",
     "MongoPaceLoader",
