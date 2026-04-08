@@ -55,15 +55,9 @@ jobs:
           pip install --upgrade pip
           pip install scikit-learn scipy numpy pandas pymongo[srv] requests
 
-      # ── Dati storici ──────────────────────────────────────────────
-      - name: Clone TracingInsights RaceData
-        run: |
-          git clone --depth=1 https://github.com/TracingInsights/RaceData.git data/racedata
-          rm -rf data/racedata/.git
-          echo "RaceData clonato: $(find data/racedata -name '*.csv' | wc -l) CSV files"
-
-      - name: Prepare fallback cache directory
-        run: mkdir -p data/cache/jolpica
+      # ── Dati storici (da MongoDB) ─────────────────────────────────
+      # I dati sono già importati in MongoDB tramite workflow ricorrenti
+      # Non serve clonare TracingInsights o preparare cache locale
 
       - name: Verify MongoDB data availability
         env:
