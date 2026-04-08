@@ -6,14 +6,13 @@ Aggregates lap times from f1_lap_times collection and computes
 constructor pace observations for the ML pipeline.
 
 Usage:
-    python scripts/compute_pace_observations.py
+    python scripts/compute_pace_observations.py [--year YEAR] [--source SOURCE]
 """
 
 import os
 import sys
 from datetime import datetime
-from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List
 
 import numpy as np
 import pandas as pd
@@ -34,74 +33,101 @@ def get_mongo_client():
     return client[mongo_db]
 
 
-def get_driver_teams(db) -> Dict[str, str]:
-    """Get driver to constructor mapping from race results."""
+def get_driver_constructor_mapping(db) -> Dict[str, str]:
+    """Get driver_code -> constructor_ref mapping from f1_races results."""
     mapping = {}
-    cursor = db.f1_races.find({}, {"results.driver_code": 1, "results.constructor_ref": 1, "year": 1})
+    cursor = db.f1_races.find(
+        {}, 
+        {"year": 1, "results.driver_code": 1, "results.constructor_ref": 1}
+    )
     for doc in cursor:
+        year = doc.get("year", 0)
         for result in doc.get("results", []):
-            key = f"{doc['year']}_{result['driver_code']}"
-            mapping[key] = result.get("constructor_ref", "")
+            driver_code = result.get("driver_code", "")
+            constructor_ref = result.get("constructor_ref", "")
+            if driver_code and constructor_ref:
+                key = f"{year}_{driver_code}"
+                mapping[key] = constructor_ref
     return mapping
 
 
-def compute_pace_observations(db, years: List[int], source: str = None) -> int:
+def compute_pace_observations(db, years: List[int], source: str = "") -> int:
     """Compute pace observations for each constructor per race."""
-    match_stage = {"year": {"$in": years}, "is_valid": True}
+    print("Building driver->constructor mapping...")
+    driver_constructor = get_driver_constructor_mapping(db)
+    print(f"  Loaded {len(driver_constructor)} driver-constructor mappings")
     
-    pipeline = [
-        {"$match": match_stage},
-        {"$group": {
-            "_id": {
-                "year": "$year",
-                "round": "$round",
-                "circuit_ref": "$circuit_ref",
-                "team": "$team",
-            },
-            "avg_pace": {"$avg": "$fuel_corrected_ms"},
-            "min_pace": {"$min": "$fuel_corrected_ms"},
-            "sample_size": {"$sum": 1},
-        }},
-        {"$sort": {"_id.year": 1, "_id.round": 1}}
-    ]
-    
+    match_query: dict = {"year": {"$in": years}}
     if source:
-        match_stage["source"] = source
-        pipeline[0]["$match"] = match_stage
+        match_query["source"] = source
     
-    results = list(db.f1_lap_times.aggregate(pipeline))
+    print(f"Fetching lap times for years {years}...")
+    cursor = db.f1_lap_times.find(match_query, {
+        "year": 1, "round": 1, "circuit_ref": 1, 
+        "driver_code": 1, "lap_time_ms": 1
+    })
     
-    if not results:
+    lap_data = []
+    skipped = 0
+    for doc in cursor:
+        year = doc.get("year", 0)
+        driver_code = doc.get("driver_code", "")
+        key = f"{year}_{driver_code}"
+        constructor_ref = driver_constructor.get(key)
+        
+        if not constructor_ref:
+            skipped += 1
+            continue
+        
+        lap_data.append({
+            "year": year,
+            "round": doc.get("round", 0),
+            "circuit_ref": doc.get("circuit_ref", ""),
+            "constructor_ref": constructor_ref,
+            "lap_time_ms": doc.get("lap_time_ms", 0),
+        })
+    
+    print(f"  Fetched {len(lap_data)} laps ({skipped} skipped - no constructor mapping)")
+    
+    if not lap_data:
         print("[WARNING] No valid lap data found")
         return 0
     
-    df = pd.DataFrame(results)
+    df = pd.DataFrame(lap_data)
     
-    constructor_medians = df.groupby(["_id.year", "_id.team"])["avg_pace"].median()
+    agg = df.groupby(["year", "round", "circuit_ref", "constructor_ref"]).agg(
+        avg_pace=("lap_time_ms", "mean"),
+        min_pace=("lap_time_ms", "min"),
+        sample_size=("lap_time_ms", "count"),
+    ).reset_index()
+    
+    print(f"  Aggregated to {len(agg)} constructor-race combinations")
+    
+    constructor_medians = agg.groupby(["year", "constructor_ref"])["avg_pace"].median()
     
     operations = []
     computed = 0
     
-    for _, row in df.iterrows():
-        year = row["_id"]["year"]
-        team = row["_id"]["team"]
+    for _, row in agg.iterrows():
+        year = row["year"]
+        team = row["constructor_ref"]
         
-        team_median = constructor_medians.get((year, team), row["avg_pace"])
+        team_median = float(constructor_medians.get((year, team), row["avg_pace"]) or row["avg_pace"])
         
-        if team_median > 0:
+        if team_median and team_median > 0:
             pace_delta = (row["avg_pace"] - team_median) / 1000
         else:
             pace_delta = 0.0
         
         doc = {
-            "_id": f"{year}_{row['_id']['round']:02d}_{team}",
-            "year": year,
-            "round": row["_id"]["round"],
-            "circuit_ref": row["_id"]["circuit_ref"],
+            "_id": f"{year}_{int(row['round']):02d}_{team}",
+            "year": int(year),
+            "round": int(row["round"]),
+            "circuit_ref": row["circuit_ref"],
             "constructor_ref": team,
-            "pace_delta_ms": pace_delta,
-            "avg_pace_ms": row["avg_pace"],
-            "min_pace_ms": row["min_pace"],
+            "pace_delta_ms": float(pace_delta),
+            "avg_pace_ms": float(row["avg_pace"]),
+            "min_pace_ms": float(row["min_pace"]),
             "sample_size": int(row["sample_size"]),
             "computed_at": datetime.utcnow().isoformat() + "Z",
             "source": source or "mixed",
@@ -113,14 +139,14 @@ def compute_pace_observations(db, years: List[int], source: str = None) -> int:
             upsert=True
         ))
         
-        if len(operations) >= 1000:
-            db.f1_pace_observations.bulk_write(operations, ordered=False)
-            computed += len(operations)
+        if len(operations) >= 500:
+            result = db.f1_pace_observations.bulk_write(operations, ordered=False)
+            computed += result.upserted_count + result.modified_count
             operations = []
     
     if operations:
-        db.f1_pace_observations.bulk_write(operations, ordered=False)
-        computed += len(operations)
+        result = db.f1_pace_observations.bulk_write(operations, ordered=False)
+        computed += result.upserted_count + result.modified_count
     
     return computed
 
@@ -128,7 +154,9 @@ def compute_pace_observations(db, years: List[int], source: str = None) -> int:
 def main():
     import argparse
     parser = argparse.ArgumentParser(description="Compute constructor pace observations")
-    parser.add_argument("--year", type=int, default=int(os.environ.get("YEAR", "2024")))
+    year_env = os.environ.get("YEAR", "").strip()
+    default_year = int(year_env) if year_env else datetime.now().year
+    parser.add_argument("--year", type=int, default=default_year)
     parser.add_argument("--source", type=str, default=None, help="Source: tracinginsights, kaggle, or None for all")
     args = parser.parse_args()
     
@@ -161,6 +189,8 @@ def main():
         sys.exit(1)
     except Exception as e:
         print(f"\n[Error] {e}")
+        import traceback
+        traceback.print_exc()
         sys.exit(1)
 
 
