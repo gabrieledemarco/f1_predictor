@@ -36,7 +36,7 @@ jobs:
       - name: Resolve secret presence (safe)
         env:
           MONGODB_URI: ${{ secrets.MONGODB_URI }}
-          MONGO_URI: ${{ secrets.MONGO_URI }}
+          MONGO_URI: ${{ secrets.MONGODB_URI }}
         run: |
           python - << 'EOF'
           import os, sys
@@ -59,7 +59,7 @@ jobs:
       - name: Parse URI and ping MongoDB (safe)
         env:
           MONGODB_URI: ${{ secrets.MONGODB_URI }}
-          MONGO_URI: ${{ secrets.MONGO_URI }}
+          MONGO_URI: ${{ secrets.MONGODB_URI }}
         run: |
           python - << 'EOF'
           import os, sys

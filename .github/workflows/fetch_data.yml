@@ -93,7 +93,7 @@ jobs:
               --from-round "$FROM" \
               --to-round "$TO"
           else
-            echo "::warning::MongoDB non raggiungibile: eseguo fetch in --dry-run (cache locale)."
+            echo "::warning::MongoDB non raggiungibile: eseguo fetch in --dry-run (solo output, nessun dato salvato)."
             python scripts/fetch_jolpica.py \
               --year "$YEAR" \
               --from-round "$FROM" \
