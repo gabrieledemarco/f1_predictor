@@ -1,0 +1,140 @@
+name: F1 Feature Significance Analysis
+
+on:
+  workflow_dispatch:
+    inputs:
+      min_year:
+        description: 'Primo anno del dataset (default: 2019)'
+        required: false
+        default: '2019'
+      max_year:
+        description: 'Ultimo anno del dataset (default: anno corrente)'
+        required: false
+        default: ''
+      verbose:
+        description: 'Log dettagliato (true/false)'
+        required: false
+        default: 'false'
+  schedule:
+    # Ogni domenica alle 06:00 UTC — dopo il GP del weekend
+    - cron: '0 6 * * 0'
+
+env:
+  MONGODB_URI: ${{ secrets.MONGODB_URI }}
+  MONGO_DB: ${{ vars.MONGO_DB || 'betbreaker' }}
+
+jobs:
+  analyze-features:
+    name: Extract & Analyze MongoDB Features
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    environment: MONGODB_URI
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Determine year range
+        id: years
+        env:
+          MAX_YEAR_INPUT: ${{ inputs.max_year || '' }}
+        run: |
+          CURRENT_YEAR=$(date +%Y)
+          MAX_YEAR="${MAX_YEAR_INPUT:-$CURRENT_YEAR}"
+          echo "max_year=$MAX_YEAR" >> $GITHUB_OUTPUT
+          echo "min_year=${{ inputs.min_year || '2019' }}" >> $GITHUB_OUTPUT
+          echo "Year range: ${{ inputs.min_year || '2019' }} – $MAX_YEAR"
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install \
+            pymongo[srv] \
+            python-dotenv \
+            numpy \
+            pandas \
+            scipy \
+            scikit-learn
+
+      - name: Run feature analysis
+        run: |
+          VERBOSE_FLAG=""
+          if [ "${{ inputs.verbose }}" = "true" ]; then
+            VERBOSE_FLAG="--verbose"
+          fi
+          python scripts/feature_analysis.py \
+            --min-year ${{ steps.years.outputs.min_year }} \
+            --max-year ${{ steps.years.outputs.max_year }} \
+            --output-dir reports/feature_analysis \
+            $VERBOSE_FLAG
+        env:
+          MONGODB_URI: ${{ secrets.MONGODB_URI }}
+          MONGO_DB:    ${{ vars.MONGO_DB || 'betbreaker' }}
+
+      - name: Upload full report as artifact
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: feature-analysis-report-${{ steps.years.outputs.max_year }}
+          path: reports/feature_analysis/
+          retention-days: 90
+
+      - name: Print top features summary
+        if: success()
+        run: |
+          echo "## Feature Analysis Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Range:** ${{ steps.years.outputs.min_year }} – ${{ steps.years.outputs.max_year }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if [ -f reports/feature_analysis/feature_rankings.csv ]; then
+            echo "### Top 20 Features (composite score)" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            python - << 'EOF'
+          import csv, sys
+          with open("reports/feature_analysis/feature_rankings.csv") as f:
+              reader = csv.DictReader(f)
+              rows = list(reader)
+          print(f"{'Rank':<5} {'Feature':<32} {'Score':>8} {'Coverage':>9}")
+          print("-" * 58)
+          for row in rows[:20]:
+              print(f"{row['rank']:<5} {row['feature']:<32} {float(row['composite_score']):>8.4f} {row['coverage_pct']:>8}%")
+          EOF
+            echo '```' >> $GITHUB_STEP_SUMMARY
+          fi
+          if [ -f reports/feature_analysis/feature_importance_report.json ]; then
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "### Data Sources" >> $GITHUB_STEP_SUMMARY
+            python - << 'EOF'
+          import json
+          with open("reports/feature_analysis/feature_importance_report.json") as f:
+              report = json.load(f)
+          sources = report.get("data_sources", {})
+          meta = report.get("rf_meta", {})
+          print(f"- Race results: {sources.get('f1_races', 0):,} driver-race records")
+          print(f"- Pace observations: {sources.get('f1_pace_observations', 0):,} records")
+          print(f"- Circuit profiles: {sources.get('f1_circuit_profiles', 0)} circuits")
+          print(f"- Lap telemetry: {sources.get('f1_lap_times', 0):,} aggregations")
+          print(f"- Odds records: {sources.get('odds', 0):,} records")
+          print(f"- Session stats: {sources.get('session_stats', 0):,} records")
+          if meta:
+              print(f"- RF cross-val MAE: {meta.get('cv_mae', 'N/A')} positions (n={meta.get('n_train', 'N/A')})")
+          EOF
+            echo "" >> $GITHUB_STEP_SUMMARY
+          fi
+
+  notify:
+    name: Notify on failure
+    runs-on: ubuntu-latest
+    needs: analyze-features
+    if: failure()
+
+    steps:
+      - name: Create failure summary
+        run: |
+          echo "## Feature Analysis Failed" >> $GITHUB_STEP_SUMMARY
+          echo "The feature significance analysis workflow failed. Check logs for details." >> $GITHUB_STEP_SUMMARY
