@@ -848,12 +848,165 @@ def main():
     print()
     print(f"RF cross-val MAE: {rf_meta.get('cv_mae', 'N/A')} positions  "
           f"(n={rf_meta.get('n_train', 'N/A')})")
+    
+    # ── Generate visualizations ────────────────────────────────────────
+    print("\nGenerating visualizations …")
+    viz_paths = generate_visualizations(df_rankings, output_dir, args.min_year, args.max_year)
+    
+    # Add visualization paths to report
+    if viz_paths:
+        report["visualizations"] = {
+            "barchart": viz_paths.get('barchart', ''),
+            "radar_chart": viz_paths.get('radar', ''),
+            "heatmap": viz_paths.get('heatmap', ''),
+            "scatter": viz_paths.get('scatter', ''),
+            "method_comparison": viz_paths.get('method_comparison', ''),
+        }
+        with open(report_path, "w") as f:
+            json.dump(report, f, indent=2, default=str)
+    
     print()
     print("Output files:")
     print(f"  {report_path}")
     print(f"  {rankings_path}")
     print(f"  {matrix_path}")
+    for name, path in viz_paths.items():
+        print(f"  {name}: {path}")
     print("=" * 70)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Visualization functions
+# ─────────────────────────────────────────────────────────────────────────────
+
+def generate_visualizations(df_rankings: pd.DataFrame, output_dir: Path, 
+                            min_year: int, max_year: int) -> dict:
+    """
+    Generate graphical visualizations for the feature analysis report.
+    Returns dict with paths to generated files.
+    """
+    try:
+        import matplotlib
+        matplotlib.use('Agg')  # Non-interactive backend
+        import matplotlib.pyplot as plt
+        import seaborn as sns
+    except ImportError as e:
+        log.warning(f"Matplotlib not available: {e}")
+        return {}
+    
+    output_paths = {}
+    plt.style.use('seaborn-v0_8-whitegrid')
+    
+    # 1. Composite Score Bar Chart (Top 20)
+    fig, ax = plt.subplots(figsize=(12, 8))
+    top20 = df_rankings.head(20)
+    colors = plt.cm.RdYlGn(top20['composite_score'].values / top20['composite_score'].max())
+    bars = ax.barh(range(len(top20)), top20['composite_score'].values, color=colors)
+    ax.set_yticks(range(len(top20)))
+    ax.set_yticklabels(top20['feature'].values)
+    ax.invert_yaxis()
+    ax.set_xlabel('Composite Score', fontsize=12)
+    ax.set_title(f'F1 Feature Significance — Top 20 (Composite Score)\n{min_year}-{max_year}', 
+                fontsize=14, fontweight='bold')
+    for i, (score, cov) in enumerate(zip(top20['composite_score'], top20['coverage_pct'])):
+        ax.text(score + 0.01, i, f' {score:.3f} ({cov:.0f}%)', va='center', fontsize=9)
+    plt.tight_layout()
+    path = output_dir / 'feature_importance_barchart.png'
+    plt.savefig(path, dpi=150, bbox_inches='tight')
+    plt.close()
+    output_paths['barchart'] = str(path)
+    
+    # 2. Radar/Spider Chart for Top 5 Features
+    fig, ax = plt.subplots(figsize=(10, 10), subplot_kw=dict(projection='polar'))
+    top5 = df_rankings.head(5)
+    categories = ['Spearman', 'MI', 'RF-MDI', 'Permutation', 'GB', 'Coverage']
+    angles = np.linspace(0, 2 * np.pi, len(categories), endpoint=False).tolist()
+    angles += angles[:1]  # Close the circle
+    
+    colors_radar = ['#e74c3c', '#3498db', '#2ecc71', '#9b59b6', '#f39c12']
+    for idx, (_, row) in enumerate(top5.iterrows()):
+        values = [row['spearman_norm'], row['mi_norm'], row['rf_mdi_norm'],
+                 row['perm_norm'], row['gb_norm'], row['coverage_pct'] / 100.0]
+        values += values[:1]
+        ax.plot(angles, values, 'o-', linewidth=2, label=row['feature'], 
+                color=colors_radar[idx % len(colors_radar)])
+        ax.fill(angles, values, alpha=0.1, color=colors_radar[idx % len(colors_radar)])
+    
+    ax.set_xticks(angles[:-1])
+    ax.set_xticklabels(categories, fontsize=10)
+    ax.set_title(f'Feature Comparison — Top 5\n{min_year}-{max_year}', 
+                fontsize=14, fontweight='bold', pad=20)
+    ax.legend(loc='upper right', bbox_to_anchor=(1.3, 1.0))
+    plt.tight_layout()
+    path = output_dir / 'feature_radar_chart.png'
+    plt.savefig(path, dpi=150, bbox_inches='tight')
+    plt.close()
+    output_paths['radar'] = str(path)
+    
+    # 3. Correlation Heatmap (method scores)
+    fig, ax = plt.subplots(figsize=(10, 8))
+    score_cols = ['spearman_norm', 'mi_norm', 'rf_mdi_norm', 'perm_norm', 'gb_norm', 'coverage_pct']
+    methods = ['Spearman', 'MI', 'RF-MDI', 'Permutation', 'GB', 'Coverage%']
+    top15 = df_rankings.head(15)
+    heatmap_data = top15[score_cols].copy()
+    heatmap_data.columns = methods
+    
+    sns.heatmap(heatmap_data, annot=True, fmt='.2f', cmap='YlOrRd', 
+                ax=ax, cbar_kws={'label': 'Normalized Score'})
+    ax.set_title(f'Feature Scores by Method — Top 15\n{min_year}-{max_year}', 
+                fontsize=14, fontweight='bold')
+    ax.set_xlabel('Method', fontsize=12)
+    ax.set_ylabel('Feature', fontsize=12)
+    plt.tight_layout()
+    path = output_dir / 'feature_heatmap.png'
+    plt.savefig(path, dpi=150, bbox_inches='tight')
+    plt.close()
+    output_paths['heatmap'] = str(path)
+    
+    # 4. Coverage vs Score Scatter Plot
+    fig, ax = plt.subplots(figsize=(10, 8))
+    scatter = ax.scatter(df_rankings['coverage_pct'], df_rankings['composite_score'],
+                       c=df_rankings['composite_score'], cmap='RdYlGn', 
+                       s=100, alpha=0.7, edgecolors='black', linewidth=0.5)
+    # Annotate top 10
+    for _, row in df_rankings.head(10).iterrows():
+        ax.annotate(row['feature'], (row['coverage_pct'], row['composite_score']),
+                   xytext=(5, 5), textcoords='offset points', fontsize=8)
+    ax.set_xlabel('Coverage %', fontsize=12)
+    ax.set_ylabel('Composite Score', fontsize=12)
+    ax.set_title(f'Coverage vs Significance\n{min_year}-{max_year}', 
+                fontsize=14, fontweight='bold')
+    plt.colorbar(scatter, ax=ax, label='Composite Score')
+    plt.tight_layout()
+    path = output_dir / 'feature_coverage_scatter.png'
+    plt.savefig(path, dpi=150, bbox_inches='tight')
+    plt.close()
+    output_paths['scatter'] = str(path)
+    
+    # 5. Method Agreement Stacked Bar
+    fig, ax = plt.subplots(figsize=(12, 6))
+    top20 = df_rankings.head(20)
+    x = np.arange(len(top20))
+    width = 0.15
+    ax.bar(x - 2*width, top20['spearman_norm'], width, label='Spearman', color='#e74c3c')
+    ax.bar(x - width, top20['mi_norm'], width, label='MI', color='#3498db')
+    ax.bar(x, top20['rf_mdi_norm'], width, label='RF-MDI', color='#2ecc71')
+    ax.bar(x + width, top20['perm_norm'], width, label='Permutation', color='#9b59b6')
+    ax.bar(x + 2*width, top20['gb_norm'], width, label='Gradient Boosting', color='#f39c12')
+    ax.set_xlabel('Feature', fontsize=12)
+    ax.set_ylabel('Normalized Score', fontsize=12)
+    ax.set_title(f'Method Scores by Feature — Top 20\n{min_year}-{max_year}', 
+                fontsize=14, fontweight='bold')
+    ax.set_xticks(x)
+    ax.set_xticklabels(top20['feature'], rotation=45, ha='right', fontsize=8)
+    ax.legend(loc='upper right', fontsize=9)
+    plt.tight_layout()
+    path = output_dir / 'feature_method_comparison.png'
+    plt.savefig(path, dpi=150, bbox_inches='tight')
+    plt.close()
+    output_paths['method_comparison'] = str(path)
+    
+    return output_paths
 
 
 if __name__ == "__main__":
