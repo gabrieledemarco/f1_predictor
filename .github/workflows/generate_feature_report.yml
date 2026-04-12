@@ -119,7 +119,13 @@ jobs:
           print(f"{'Rank':<5} {'Feature':<28} {'Score':>7} {'Coverage':>8}")
           print("-" * 52)
           for row in rows[:15]:
-              print(f"{row['rank']:<5} {row['feature']:<28} {float(row['composite_score']):>7.3f} {row['coverage_pct']:>7.0f}%")
+              score = row.get('composite_score', 'N/A') or 'N/A'
+              try:
+                  score_val = float(score) if score != 'N/A' else 0.0
+              except (ValueError, TypeError):
+                  score_val = 0.0
+              cov = row.get('coverage_pct', '0') or '0'
+              print(f"{row.get('rank', ''):<5} {row.get('feature', ''):<28} {score_val:>7.3f} {cov:>7.0f}%")
           EOF
           echo '```' >> $GITHUB_STEP_SUMMARY
         fi
@@ -139,20 +145,24 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           python - << 'EOF'
           import json
-          with open("$OUTPUT_DIR/feature_importance_report.json") as f:
-              report = json.load(f)
-          sources = report.get("data_sources", {})
-          meta = report.get("rf_meta", {})
-          print(f"- Race results: {sources.get('f1_races', 0):,} driver-race records")
-          print(f"- Pace observations: {sources.get('f1_pace_observations', 0):,} records")
-          print(f"- Circuit profiles: {sources.get('f1_circuit_profiles', 0)} circuits")
-          print(f"- Lap telemetry: {sources.get('f1_lap_times', 0):,} aggregations")
-          print(f"- Odds records: {sources.get('odds', 0):,} records")
-          print(f"- Session stats: {sources.get('session_stats', 0):,} records")
-          print(f"\n- Total observations: {report.get('config', {}).get('n_observations', 'N/A'):,}")
-          print(f"- Features analyzed: {report.get('config', {}).get('n_features', 'N/A')}")
-          if meta:
-              print(f"- RF cross-val MAE: {meta.get('cv_mae', 'N/A')} positions (n={meta.get('n_train', 'N/A')})")
+          try:
+              with open("$OUTPUT_DIR/feature_importance_report.json") as f:
+                  report = json.load(f)
+              sources = report.get("data_sources", {})
+              meta = report.get("rf_meta", {})
+              print(f"- Race results: {sources.get('f1_races', 0):,} driver-race records")
+              print(f"- Pace observations: {sources.get('f1_pace_observations', 0):,} records")
+              print(f"- Circuit profiles: {sources.get('f1_circuit_profiles', 0)} circuits")
+              print(f"- Lap telemetry: {sources.get('f1_lap_times', 0):,} aggregations")
+              print(f"- Odds records: {sources.get('odds', 0):,} records")
+              print(f"- Session stats: {sources.get('session_stats', 0):,} records")
+              config = report.get("config", {})
+              print(f"\n- Total observations: {config.get('n_observations', 'N/A'):,}")
+              print(f"- Features analyzed: {config.get('n_features', 'N/A')}")
+              if meta:
+                  print(f"- RF cross-val MAE: {meta.get('cv_mae', 'N/A')} positions (n={meta.get('n_train', 'N/A')})")
+          except Exception as e:
+              print(f"- Error loading report: {e}")
           EOF
         fi
 
