@@ -162,15 +162,13 @@ jobs:
           EOF
         fi
 
-  # ────────────────────────────────────────────────────────────────────────
   notify:
-  # ────────────────────────────────────────────────────────────────────────
-  name: Notify on failure
-  runs-on: ubuntu-latest
-  needs: analyze
-  if: failure()
+    name: Notify on failure
+    runs-on: ubuntu-latest
+    needs: analyze
+    if: failure()
 
-  steps:
+    steps:
     - name: Create failure summary
       run: |
         echo "## ❌ Feature Analysis Failed" >> $GITHUB_STEP_SUMMARY
