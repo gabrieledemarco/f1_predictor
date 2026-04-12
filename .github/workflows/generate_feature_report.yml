@@ -16,7 +16,6 @@ on:
         required: false
         default: 'reports/feature_analysis'
   schedule:
-    # Ogni domenica alle 06:00 UTC — dopo il GP del weekend
     - cron: '0 6 * * 0'
 
 env:
@@ -24,15 +23,12 @@ env:
   MONGO_DB: ${{ vars.MONGO_DB || 'betbreaker' }}
 
 jobs:
-  # ────────────────────────────────────────────────────────────────────────
   analyze:
-  # ────────────────────────────────────────────────────────────────────────
-  name: Run Feature Significance Analysis
-  runs-on: ubuntu-latest
-  timeout-minutes: 90
-  environment: MONGODB_URI
+    name: Run Feature Significance Analysis
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
 
-  steps:
+    steps:
     - name: Checkout repository
       uses: actions/checkout@v4
 
