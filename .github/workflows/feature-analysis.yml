@@ -102,7 +102,8 @@ jobs:
           print(f"{'Rank':<5} {'Feature':<32} {'Score':>8} {'Coverage':>9}")
           print("-" * 58)
           for row in rows[:20]:
-              print(f"{row['rank']:<5} {row['feature']:<32} {float(row['composite_score']):>8.4f} {row['coverage_pct']:>8}%")
+              score = float(row['composite_score']) if row['composite_score'].strip() else 0.0
+              print(f"{row['rank']:<5} {row['feature']:<32} {score:>8.4f} {row['coverage_pct']:>8}%")
           EOF
             echo '```' >> $GITHUB_STEP_SUMMARY
           fi

@@ -115,6 +115,10 @@ def extract_race_results(db, min_year: int, max_year: int) -> pd.DataFrame:
             status = res.get("status", "Unknown")
             constructor_ref = res.get("constructor_ref", "unknown")
 
+            # Fallback: use qualifying position if grid_position missing from race result
+            if not grid_pos and driver_code in qual_lookup:
+                grid_pos = qual_lookup[driver_code]
+
             is_dnf = 1 if finish_pos is None else 0
             finish_pos_filled = finish_pos if finish_pos is not None else 21
             pos_gain = grid_pos - finish_pos_filled if grid_pos > 0 else None
@@ -482,6 +486,8 @@ def run_spearman_correlation(df: pd.DataFrame, features: list[str]) -> list[dict
         if len(mask) < 30:
             continue
         rho, pval = spearmanr(mask[feat], mask[TARGET])
+        if not np.isfinite(rho) or not np.isfinite(pval):
+            continue
         results.append({
             "feature": feat,
             "spearman_rho": round(float(rho), 4),
@@ -633,8 +639,13 @@ def aggregate_rankings(
     def rank_dict(results: list[dict], key: str) -> dict[str, float]:
         if not results:
             return {}
-        vals = {r["feature"]: abs(r[key]) for r in results}
+        vals = {}
+        for r in results:
+            v = abs(r[key])
+            vals[r["feature"]] = 0.0 if (v != v or not np.isfinite(v)) else v
         max_v = max(vals.values()) if vals else 1.0
+        if not max_v or not np.isfinite(max_v):
+            max_v = 1.0
         return {f: v / max_v for f, v in vals.items()}
 
     all_feats = set()
@@ -666,6 +677,8 @@ def aggregate_rankings(
             0.25 * pm_s +
             0.15 * gb_s
         ) * cov  # penalise low-coverage features
+        if not np.isfinite(composite):
+            composite = 0.0
 
         rows.append({
             "feature":           feat,
