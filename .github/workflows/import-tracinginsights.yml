@@ -124,11 +124,51 @@ jobs:
           MONGO_DB: ${{ vars.MONGO_DB || 'betbreaker' }}
           YEAR: ${{ needs.sync-and-import.outputs.years }}
 
+  # ========================================================================
+  # TELEMETRY (Sector Times) - Import from TracingInsights GitHub API
+  # ========================================================================
+  import-telemetry:
+    name: Import Telemetry Sector Times
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    needs: sync-and-import
+    environment: MONGODB_URI
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install pymongo python-dotenv
+
+      - name: Import telemetry for 2024
+        run: python scripts/import_telemetry.py --year 2024
+        env:
+          MONGODB_URI: ${{ secrets.MONGODB_URI }}
+          MONGO_DB: ${{ vars.MONGO_DB || 'betbreaker' }}
+
+      - name: Import telemetry for 2023
+        run: python scripts/import_telemetry.py --year 2023
+        env:
+          MONGODB_URI: ${{ secrets.MONGODB_URI }}
+          MONGO_DB: ${{ vars.MONGO_DB || 'betbreaker' }}
+
+      - name: Import telemetry for 2022
+        run: python scripts/import_telemetry.py --year 2022
+        env:
+          MONGODB_URI: ${{ secrets.MONGODB_URI }}
+          MONGO_DB: ${{ vars.MONGO_DB || 'betbreaker' }}
+
   feature-analysis:
     name: Feature Selection Analysis
     runs-on: ubuntu-latest
     timeout-minutes: 60
-    needs: compute-pace
+    needs: [compute-pace, import-telemetry]
     environment: MONGODB_URI
 
     steps:
