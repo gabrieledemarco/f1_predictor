@@ -65,11 +65,10 @@ jobs:
           MONGO_DB: ${{ vars.MONGO_DB || 'betbreaker' }}
 
       - name: Import lap times → MongoDB
-        run: python scripts/import_tracinginsights.py --racedata-path data/racedata
+        run: python scripts/import_tracinginsights.py --racedata-path data/racedata --year ${{ steps.setup-year.outputs.year }}
         env:
           MONGODB_URI: ${{ secrets.MONGODB_URI }}
           MONGO_DB: ${{ vars.MONGO_DB || 'betbreaker' }}
-          YEAR: ${{ steps.setup-year.outputs.year }}
           FORCE: ${{ inputs.force || 'false' }}
 
       - name: Import qualifying data → MongoDB
