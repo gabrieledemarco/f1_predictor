@@ -59,6 +59,10 @@ jobs:
           rm -rf data/racedata/.git
           rm -rf data/racedata/.github
           echo "RaceData clonato: $(find data/racedata -name '*.csv' | wc -l) CSV files"
+          echo "=== Struttura directory (prime 4 livelli) ==="
+          find data/racedata -maxdepth 4 -type d | head -60
+          echo "=== File CSV trovati ==="
+          find data/racedata -name '*.csv' | head -30
 
       - name: Set up Python
         uses: actions/setup-python@v5

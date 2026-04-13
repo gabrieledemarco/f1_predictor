@@ -110,31 +110,30 @@ def parse_lap_time(lap_time_str: str) -> Optional[float]:
         return None
 
 
-def resolve_racedata_root(racedata_path: Path) -> Path:
+def find_all_laps_csvs(racedata_path: Path) -> list[Path]:
     """
-    Trova la root effettiva del repo TracingInsights.
-    La repo ha una subdirectory 'data/' che contiene le cartelle per anno.
-    Ritorna il path alla directory che contiene direttamente le cartelle {year}/.
+    Trova tutti i file laps.csv nel repo TracingInsights,
+    indipendentemente dalla struttura delle directory.
     """
-    if not racedata_path.exists():
-        return racedata_path
+    found = []
+    for p in racedata_path.rglob("laps.csv"):
+        found.append(p)
+    # Cerca anche varianti del nome
+    for p in racedata_path.rglob("*laps*.csv"):
+        if p not in found:
+            found.append(p)
+    return sorted(found)
 
-    # Controlla se ci sono directory numeriche (anni) direttamente qui
-    year_dirs = [d for d in racedata_path.iterdir()
-                 if d.is_dir() and d.name.isdigit() and 2018 <= int(d.name) <= 2030]
-    if year_dirs:
-        return racedata_path
 
-    # Cerca una subdirectory unica che contenga le directory anni
-    sub_dirs = [d for d in racedata_path.iterdir() if d.is_dir()]
-    for sub in sub_dirs:
-        year_dirs = [d for d in sub.iterdir()
-                     if d.is_dir() and d.name.isdigit() and 2018 <= int(d.name) <= 2030]
-        if year_dirs:
-            print(f"  [INFO] TracingInsights data root rilevata: {sub}")
-            return sub
-
-    return racedata_path
+def extract_year_from_path(csv_path: Path, default_year: int) -> int:
+    """
+    Estrae l'anno dal path del CSV.
+    Cerca directory con nome anno numerico (2018-2030).
+    """
+    for part in csv_path.parts:
+        if part.isdigit() and 2018 <= int(part) <= 2030:
+            return int(part)
+    return default_year
 
 
 def folder_to_circuit_ref(folder_name: str, db=None, year: int = None) -> Optional[str]:
@@ -375,27 +374,39 @@ def main():
         print("  git clone https://github.com/TracingInsights/RaceData.git data/racedata")
         sys.exit(1)
 
-    # Auto-detect root (potrebbe avere una sub 'data/')
-    data_root = resolve_racedata_root(racedata_path)
-
-    # Anni disponibili nel repo
-    available_years = sorted([
-        int(d.name) for d in data_root.iterdir()
-        if d.is_dir() and d.name.isdigit() and 2018 <= int(d.name) <= 2030
-    ])
-    if not available_years:
-        print(f"[ERROR] Nessuna directory anno trovata in {data_root}")
-        print(f"Contenuto: {[d.name for d in data_root.iterdir() if d.is_dir()]}")
-        sys.exit(1)
-
-    print(f"Anni disponibili nel repo: {available_years}")
-    years_to_import = [y for y in available_years if args.min_year <= y <= args.max_year]
-    if not years_to_import:
-        print(f"[WARNING] Nessun anno nel range {args.min_year}–{args.max_year} trovato nel repo")
-        print(f"  Range disponibile: {available_years[0]}–{available_years[-1]}")
+    # Trova tutti i file laps.csv ricorsivamente (struttura-agnostica)
+    all_csvs = find_all_laps_csvs(racedata_path)
+    if not all_csvs:
+        print(f"[WARNING] Nessun file laps.csv trovato in {racedata_path}")
+        print(f"Contenuto root: {[d.name for d in racedata_path.iterdir()]}")
         sys.exit(0)
 
-    print(f"Anni da importare: {years_to_import}")
+    print(f"CSV trovati nel repo: {len(all_csvs)}")
+    for p in all_csvs[:10]:
+        print(f"  {p.relative_to(racedata_path)}")
+    if len(all_csvs) > 10:
+        print(f"  ... e altri {len(all_csvs)-10}")
+    print()
+
+    # Determina il default_year per CSV senza anno nel path
+    # (TracingInsights pubblica dati dell'anno corrente senza subdirectory)
+    default_year = args.max_year
+
+    # Filtra per range anni
+    def get_csv_year(p: Path) -> int:
+        return extract_year_from_path(p, default_year)
+
+    csvs_in_range = [p for p in all_csvs
+                     if args.min_year <= get_csv_year(p) <= args.max_year]
+
+    if not csvs_in_range:
+        # Se nessun CSV ha anno nel path, importa tutto con default_year
+        years_in_repo = sorted(set(get_csv_year(p) for p in all_csvs))
+        print(f"[INFO] Nessun anno nel path dei CSV. Anni rilevati: {years_in_repo}")
+        print(f"[INFO] Importo tutti i CSV con anno={default_year} (default)")
+        csvs_in_range = all_csvs
+
+    print(f"CSV da importare: {len(csvs_in_range)}")
     print()
 
     try:
@@ -410,35 +421,21 @@ def main():
         print()
 
         grand_total = 0
+        skipped_csvs = 0
 
-        for year in years_to_import:
-            year_path = data_root / str(year)
-            circuits = sorted([d for d in year_path.iterdir() if d.is_dir()])
-            print(f"── {year}: {len(circuits)} cartelle circuito")
-
-            year_total = 0
-            for circuit_dir in circuits:
-                laps_file = circuit_dir / "laps.csv"
-                if not laps_file.exists():
-                    # Cerca anche varianti del nome
-                    alternatives = list(circuit_dir.glob("*lap*.csv"))
-                    if alternatives:
-                        laps_file = alternatives[0]
-                    else:
-                        continue
-
-                count = import_laps_csv(db, laps_file, year, force=args.force)
-                if count > 0:
-                    print(f"    {circuit_dir.name}: {count} laps importati")
-                year_total += count
-                time.sleep(0.05)
-
-            print(f"  → Anno {year}: {year_total} laps totali")
-            grand_total += year_total
+        for csv_path in csvs_in_range:
+            year = get_csv_year(csv_path)
+            count = import_laps_csv(db, csv_path, year, force=args.force)
+            if count > 0:
+                print(f"  {year} / {csv_path.parent.name}: {count} laps importati")
+                grand_total += count
+            else:
+                skipped_csvs += 1
+            time.sleep(0.05)
 
         print()
         print("=" * 65)
-        print(f"COMPLETATO: {grand_total} laps importati su {len(years_to_import)} anni")
+        print(f"COMPLETATO: {grand_total} laps importati, {skipped_csvs} CSV saltati")
         print("=" * 65)
 
     except PyMongoError as e:
