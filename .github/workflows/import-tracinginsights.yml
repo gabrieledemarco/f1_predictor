@@ -3,12 +3,16 @@ name: Import TracingInsights Data
 on:
   workflow_dispatch:
     inputs:
-      year:
-        description: 'Year to import (default: current year)'
+      min_year:
+        description: 'Anno minimo da importare (default: 2019)'
+        required: false
+        default: '2019'
+      max_year:
+        description: 'Anno massimo da importare (default: anno corrente)'
         required: false
         default: ''
       force:
-        description: 'Force re-import'
+        description: 'Force re-import (ignora log importazioni precedenti)'
         required: false
         default: 'false'
   schedule:
@@ -28,21 +32,26 @@ jobs:
     timeout-minutes: 60
     environment: MONGODB_URI
     outputs:
-      year: ${{ steps.setup-year.outputs.year }}
+      year:     ${{ steps.setup-year.outputs.year }}
+      min_year: ${{ steps.setup-year.outputs.min_year }}
+      max_year: ${{ steps.setup-year.outputs.max_year }}
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Determine year
+      - name: Determine year range
         id: setup-year
         env:
-          YEAR: ${{ inputs.year || '' }}
+          MAX_YEAR_INPUT: ${{ inputs.max_year || '' }}
         run: |
           CURRENT_YEAR=$(date +%Y)
-          SELECTED_YEAR="${YEAR:-$CURRENT_YEAR}"
-          echo "year=$SELECTED_YEAR" >> $GITHUB_OUTPUT
-          echo "Anno selezionato: $SELECTED_YEAR"
+          MAX_YEAR="${MAX_YEAR_INPUT:-$CURRENT_YEAR}"
+          MIN_YEAR="${{ inputs.min_year || '2019' }}"
+          echo "min_year=$MIN_YEAR" >> $GITHUB_OUTPUT
+          echo "max_year=$MAX_YEAR" >> $GITHUB_OUTPUT
+          echo "year=$MAX_YEAR" >> $GITHUB_OUTPUT
+          echo "Range anni: $MIN_YEAR – $MAX_YEAR"
 
       - name: Clone TracingInsights RaceData
         run: |
@@ -60,12 +69,16 @@ jobs:
         run: pip install pymongo python-dotenv pandas
 
       - name: Import lap times → MongoDB
-        run: python scripts/import_tracinginsights.py
+        run: |
+          FORCE_FLAG=""
+          if [ "${{ inputs.force }}" = "true" ]; then FORCE_FLAG="--force"; fi
+          python scripts/import_tracinginsights.py \
+            --min-year ${{ steps.setup-year.outputs.min_year }} \
+            --max-year ${{ steps.setup-year.outputs.max_year }} \
+            $FORCE_FLAG
         env:
           MONGODB_URI: ${{ secrets.MONGODB_URI }}
           MONGO_DB: ${{ vars.MONGO_DB || 'betbreaker' }}
-          YEAR: ${{ steps.setup-year.outputs.year }}
-          FORCE: ${{ inputs.force || 'false' }}
 
   # ── Job separato: calcolo pace (legge da MongoDB, non dal filesystem) ──
   compute-pace:
@@ -92,7 +105,8 @@ jobs:
         env:
           MONGODB_URI: ${{ secrets.MONGODB_URI }}
           MONGO_DB: ${{ vars.MONGO_DB || 'betbreaker' }}
-          YEAR: ${{ needs.sync-and-import.outputs.year }}
+          MIN_YEAR: ${{ needs.sync-and-import.outputs.min_year }}
+          MAX_YEAR: ${{ needs.sync-and-import.outputs.max_year }}
 
   notify:
     name: Notify on failure

@@ -127,12 +127,20 @@ def compute_pace_observations(db, years: List[int], source: str = None) -> int:
 
 def main():
     import argparse
+    current_year = datetime.now().year
     parser = argparse.ArgumentParser(description="Compute constructor pace observations")
-    parser.add_argument("--year", type=int, default=int(os.environ.get("YEAR", "2024")))
+    parser.add_argument("--year",     type=int, default=None, help="Anno singolo (deprecated: usa --min-year/--max-year)")
+    parser.add_argument("--min-year", type=int, default=int(os.environ.get("MIN_YEAR", os.environ.get("YEAR", "2019"))),
+                        help="Anno minimo (default: 2019)")
+    parser.add_argument("--max-year", type=int, default=int(os.environ.get("MAX_YEAR", str(current_year))),
+                        help="Anno massimo (default: anno corrente)")
     parser.add_argument("--source", type=str, default=None, help="Source: tracinginsights, kaggle, or None for all")
     args = parser.parse_args()
-    
-    years = [args.year] if args.year else list(range(2018, datetime.now().year + 1))
+
+    if args.year:
+        years = [args.year]
+    else:
+        years = list(range(args.min_year, args.max_year + 1))
     
     print("=" * 60)
     print("CONSTRUCTOR PACE COMPUTATION")
