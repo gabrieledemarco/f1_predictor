@@ -3,16 +3,16 @@ name: Import TracingInsights Data
 on:
   workflow_dispatch:
     inputs:
-      year:
-        description: 'Anno da importare (default: 2025)'
-        required: false
-        default: '2025'
       min_year:
         description: 'Anno minimo da importare (default: 2019)'
         required: false
         default: '2019'
+      max_year:
+        description: 'Anno massimo da importare (default: 2024)'
+        required: false
+        default: '2024'
       force:
-        description: 'Force re-import (ignora log importazioni precedenti)'
+        description: 'Force re-import'
         required: false
         default: 'false'
   schedule:
@@ -44,13 +44,15 @@ jobs:
           ls -la data/racedata/
           ls -la data/racedata/data/ 2>/dev/null || echo "no data/ subdir"
 
-      - name: Determine year
+      - name: Determine year range
         id: setup-year
         run: |
-          # Default to 2025 if not provided
-          SELECTED_YEAR="${{ inputs.year || '2025' }}"
-          echo "year=$SELECTED_YEAR" >> $GITHUB_OUTPUT
-          echo "Anno selezionato: $SELECTED_YEAR"
+          MIN_YEAR="${{ inputs.min_year || '2019' }}"
+          MAX_YEAR="${{ inputs.max_year || '2024' }}"
+          echo "min_year=$MIN_YEAR" >> $GITHUB_OUTPUT
+          echo "max_year=$MAX_YEAR" >> $GITHUB_OUTPUT
+          echo "year=$MAX_YEAR" >> $GITHUB_OUTPUT
+          echo "Anni: $MIN_YEAR - $MAX_YEAR"
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -67,17 +69,23 @@ jobs:
           MONGO_DB: ${{ vars.MONGO_DB || 'betbreaker' }}
 
       - name: Import lap times → MongoDB
-        run: python scripts/import_tracinginsights.py --racedata-path data/racedata --year ${{ steps.setup-year.outputs.year }}
+        run: |
+          python scripts/import_tracinginsights.py --racedata-path data/racedata --year ${{ steps.setup-year.outputs.max_year }}
         env:
           MONGODB_URI: ${{ secrets.MONGODB_URI }}
           MONGO_DB: ${{ vars.MONGO_DB || 'betbreaker' }}
+          MIN_YEAR: ${{ steps.setup-year.outputs.min_year }}
+          MAX_YEAR: ${{ steps.setup-year.outputs.max_year }}
           FORCE: ${{ inputs.force || 'false' }}
 
       - name: Import qualifying data → MongoDB
-        run: python scripts/import_qualifying.py --min-year 2019 --max-year ${{ steps.setup-year.outputs.year }} --racedata-path data/racedata --force
+        run: |
+          python scripts/import_qualifying.py --racedata-path data/racedata --force
         env:
           MONGODB_URI: ${{ secrets.MONGODB_URI }}
           MONGO_DB: ${{ vars.MONGO_DB || 'betbreaker' }}
+          MIN_YEAR: ${{ steps.setup-year.outputs.min_year }}
+          MAX_YEAR: ${{ steps.setup-year.outputs.max_year }}
 
   compute-pace:
     name: Compute Constructor Pace Observations
