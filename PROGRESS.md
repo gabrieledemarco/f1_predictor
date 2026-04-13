@@ -33,68 +33,58 @@ che impedivano una corretta misurazione delle feature.
 
 ---
 
-## PR #2 — Fix import TracingInsights: path, circuit mapping, multi-year
+## PR #2 — Fix import TracingInsights: redesign per struttura flat CSV
 **Branch:** `claude/goofy-chatelet`  
 **Data:** 2026-04-13  
-**Stato:** In progress
+**Stato:** In progress (commit 3/3)
 
 ### Obiettivo
-Correggere il workflow `import-tracinginsights.yml` che importava 0 lap per tre bug distinti,
+Correggere il workflow `import-tracinginsights.yml` che importava 0 lap,
 rendendo `f1_lap_times` sempre vuota e invalidando l'analisi delle feature di telemetria.
 
-### Root cause analisi
+### Root cause analisi (finale — dopo 3 run diagnostici)
 
-**1. Path sbagliato** — Bug principale  
-Il repository TracingInsights/RaceData ha struttura:
+**Assunzione sbagliata sulla struttura del repo**  
+Lo script assumeva che TracingInsights/RaceData avesse una struttura per-circuito:
 ```
-RaceData/
-    data/           ← subdirectory NON documentata
-        2024/
-            Bahrain/laps.csv
-        2023/
-            ...
+RaceData/data/{year}/{Circuit}/laps.csv
 ```
-Ma lo script cercava `data/racedata/{year}/` invece di `data/racedata/data/{year}/`.  
-→ `"Anni disponibili: ['data']"` — il log confermava il problema.
+ma il repo usa invece lo schema **Ergast flat CSV**:
+```
+RaceData/data/
+    lap_times.csv     ← TUTTI i giri di TUTTI gli anni (raceId, driverId, lap, ms)
+    races.csv         ← raceId → year, round, circuitId
+    drivers.csv       ← driverId → driverRef/code
+    circuits.csv      ← circuitId → circuitRef
+    results.csv       ← raceId, driverId, constructorId (per enrichment team)
+```
+→ Il `rglob("laps.csv")` non trovava nulla perché il file si chiama `lap_times.csv`
+  ed è uno solo per l'intero dataset storico (2019-2025).
 
-**2. Circuit name mapping mancante**  
-Lo script usava `folder_name.lower().replace(" ", "_")` come `circuit_ref`, ma f1_races
-usa i codici Jolpica/Ergast:
-- `Saudi_Arabia` → cercava `saudi_arabia` ma il DB ha `jeddah`  
-- `Australia` → cercava `australia` ma il DB ha `albert_park`  
-- ecc. per tutti i 24 circuiti
-
-→ `"Warning: No race found for {year} {circuit_ref}, skipping"` per ogni circuito.
-
-**3. Import single-year**  
-Lo script accettava solo un anno (default: anno corrente = 2026) ma il repo
-TracingInsights non ha ancora dati 2026.  
-→ `"[WARNING] Year 2026 not found in racedata"` e exit(0) immediato.
-
-### Fix implementati
+### Fix implementati (riscrittura completa)
 
 | File | Modifica |
 |------|----------|
-| `scripts/import_tracinginsights.py` | Auto-detect path via `resolve_racedata_root()` |
-| `scripts/import_tracinginsights.py` | Aggiunto `FOLDER_TO_CIRCUIT_REF` dict con 24+5 circuiti |
-| `scripts/import_tracinginsights.py` | Supporto `--min-year`/`--max-year` con loop su anni disponibili |
-| `scripts/import_tracinginsights.py` | Colonne CSV rilevate dinamicamente (robusto a varianti di nome) |
-| `scripts/import_tracinginsights.py` | Compound normalizzato (SOFT/MEDIUM/HARD/UNKNOWN) |
-| `scripts/import_tracinginsights.py` | Filtro outlier lap_time: `0 < ms < 300_000` |
+| `scripts/import_tracinginsights.py` | **Riscrittura completa**: lettura flat `lap_times.csv` con join su `races.csv`/`drivers.csv`/`circuits.csv` |
+| `scripts/import_tracinginsights.py` | `find_data_dir()`: auto-localizza la directory con i CSV flat |
+| `scripts/import_tracinginsights.py` | `load_lookup_tables()`: carica race_info, driver_code_map, circuit_ref_map |
+| `scripts/import_tracinginsights.py` | `import_flat_lap_times()`: import con filtro anno range, skip già importati |
+| `scripts/import_tracinginsights.py` | `enrich_teams_from_results()`: arricchisce il campo `team` da `results.csv` |
+| `scripts/import_tracinginsights.py` | Bulk write a batch di 2000 per performance |
 | `scripts/compute_pace_observations.py` | Supporto `--min-year`/`--max-year` via env `MIN_YEAR`/`MAX_YEAR` |
 | `.github/workflows/import-tracinginsights.yml` | Input `min_year`/`max_year` al posto di `year` |
 | `.github/workflows/import-tracinginsights.yml` | Outputs `min_year`/`max_year` passati al job compute-pace |
 
 ### Feature attese dopo import corretto
 
-| Feature | Sorgente | Impatto atteso |
-|---------|---------|----------------|
-| `avg_lap_ms`, `min_lap_ms`, `std_lap_ms` | f1_lap_times | MAE da 5.08 → ~3.5 posizioni |
-| `lap_consistency` (std/avg) | f1_lap_times | Spearman rho atteso ~0.25-0.35 |
-| `soft_pct`, `medium_pct`, `hard_pct` | f1_lap_times | Feature strategia gomme |
-| `avg_tyre_life`, `max_tyre_life` | f1_lap_times | Indice di gestione gomme |
-| `pb_rate` | f1_lap_times | Personal best rate per driver |
+| Feature | Sorgente | Note |
+|---------|---------|------|
+| `avg_lap_ms`, `min_lap_ms`, `std_lap_ms` | f1_lap_times | Disponibili in lap_times.csv (milliseconds col) |
+| `lap_consistency` (std/avg) | f1_lap_times | Calcolabile da lap_time_ms |
 | `pace_delta_ms` (aggiornato) | f1_pace_observations | Già rank #1, qualità migliorata |
+| `soft_pct`, `medium_pct`, `hard_pct` | **NON disponibili** | lap_times.csv non ha dati gomme; servirebbero FastF1 o altro |
+| `avg_tyre_life`, `max_tyre_life` | **NON disponibili** | Stessa limitazione |
+| `pb_rate` | **NON disponibili** | lap_times.csv non ha flag personal best |
 
 ---
 
