@@ -47,8 +47,13 @@ jobs:
         env:
           YEAR: ${{ inputs.year || '' }}
         run: |
-          CURRENT_YEAR=$(date +%Y)
-          SELECTED_YEAR="${YEAR:-$CURRENT_YEAR}"
+          # Import all historical data by default (2019-2025)
+          # Only import specific year if user explicitly provides it
+          if [ -n "$YEAR" ] && [ "$YEAR" != "" ]; then
+            SELECTED_YEAR="$YEAR"
+          else
+            SELECTED_YEAR="2025"  # Default to latest complete year
+          fi
           echo "year=$SELECTED_YEAR" >> $GITHUB_OUTPUT
           echo "Anno selezionato: $SELECTED_YEAR"
 
@@ -67,7 +72,7 @@ jobs:
           MONGO_DB: ${{ vars.MONGO_DB || 'betbreaker' }}
 
       - name: Import lap times → MongoDB
-        run: python scripts/import_tracinginsights.py --racedata-path data/racedata/data
+        run: python scripts/import_tracinginsights.py --racedata-path data/racedata/data --year ${{ steps.setup-year.outputs.year }}
         env:
           MONGODB_URI: ${{ secrets.MONGODB_URI }}
           MONGO_DB: ${{ vars.MONGO_DB || 'betbreaker' }}
@@ -75,7 +80,7 @@ jobs:
           FORCE: ${{ inputs.force || 'false' }}
 
       - name: Import qualifying data → MongoDB
-        run: python scripts/import_qualifying.py --min-year 2019 --max-year ${{ steps.setup-year.outputs.year }} --racedata-path data/racedata/data
+        run: python scripts/import_qualifying.py --min-year 2019 --max-year ${{ steps.setup-year.outputs.year }} --racedata-path data/racedata/data --force
         env:
           MONGODB_URI: ${{ secrets.MONGODB_URI }}
           MONGO_DB: ${{ vars.MONGO_DB || 'betbreaker' }}
