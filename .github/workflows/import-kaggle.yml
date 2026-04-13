@@ -1,4 +1,14 @@
-name: Import Kaggle Historical Data
+name: Import Kaggle Historical Data [DEPRECATED]
+
+# DEPRECATO — i dati Kaggle sono già presenti in TracingInsights.
+#
+# I dati storici Kaggle (lap times, race results) sono ora importabili tramite
+# TracingInsights, che fornisce dati più completi e aggiornati.
+#
+# Questo workflow rimane disponibile solo per eventuale recovery di dati
+# storici non presenti in TracingInsights.
+#
+# Per riattivare: impostare `if: false` → `if: true` nel job `download-kaggle`.
 
 on:
   workflow_dispatch:
@@ -11,8 +21,7 @@ on:
         description: 'Force re-import'
         required: false
         default: 'false'
-  schedule:
-    - cron: '0 4 1 * *'
+  # schedule: DEPRECATO — rimosso, dati in TracingInsights
 
 env:
   MONGODB_URI: ${{ secrets.MONGODB_URI }}
@@ -22,6 +31,7 @@ env:
 
 jobs:
   download-kaggle:
+    if: false  # DEPRECATO — dati disponibili in TracingInsights
     name: Download Kaggle Dataset
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -71,6 +81,7 @@ jobs:
           ls -la data/kaggle_raw/
 
   import-kaggle:
+    if: false  # DEPRECATO
     name: Import Kaggle Data to MongoDB
     runs-on: ubuntu-latest
     timeout-minutes: 60
@@ -98,6 +109,7 @@ jobs:
           FORCE: ${{ inputs.force || 'false' }}
 
   compute-pace-kaggle:
+    if: false  # DEPRECATO
     name: Compute Kaggle Pace Observations
     runs-on: ubuntu-latest
     timeout-minutes: 30
