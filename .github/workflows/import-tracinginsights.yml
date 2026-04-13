@@ -37,10 +37,10 @@ jobs:
           YEAR: ${{ inputs.year || '' }}
         run: |
           if [ -n "$YEAR" ]; then
-            echo "years=[$YEAR]" >> $GITHUB_OUTPUT
+            echo "years=$YEAR" >> $GITHUB_OUTPUT
             echo "Anno selezionato: $YEAR"
           else
-            echo "years=[2018,2019,2020,2021,2022,2023,2024,2025]" >> $GITHUB_OUTPUT
+            echo "years=2018,2019,2020,2021,2022,2023,2024,2025" >> $GITHUB_OUTPUT
             echo "Importing all years: 2018-2025"
           fi
 
