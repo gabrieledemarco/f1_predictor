@@ -111,10 +111,34 @@ def extract_pace_features(db, years: List[int]) -> pd.DataFrame:
     return pd.DataFrame(pace_data)
 
 
+def extract_sector_features(db, years: List[int]) -> pd.DataFrame:
+    """Extract sector time features from f1_session_stats collection."""
+    
+    print(f"Extracting sector features for years {years}...")
+    
+    cursor = db.f1_session_stats.find(
+        {"year": {"$in": years}, "session_type": "qualifying"},
+        {
+            "year": 1, "circuit_ref": 1, "driver_code": 1,
+            "s1_best_ms": 1, "s2_best_ms": 1, "s3_best_ms": 1,
+            "total_best_ms": 1
+        }
+    )
+    
+    sector_data = list(cursor)
+    print(f"  Found {len(sector_data)} sector time records")
+    
+    if not sector_data:
+        return pd.DataFrame()
+    
+    return pd.DataFrame(sector_data)
+
+
 def compute_feature_importance(df: pd.DataFrame, target_col: str = "position") -> pd.DataFrame:
     """Compute feature importance using Random Forest."""
     
-    feature_cols = [c for c in df.columns if c not in [target_col, "_id", "driver_code", "circuit_ref", "constructor_ref"]]
+    exclude_cols = [target_col, "_id", "driver_code", "circuit_ref", "constructor_ref", "lookup_key", "source", "imported_at"]
+    feature_cols = [c for c in df.columns if c not in exclude_cols and not c.endswith("_ref")]
     
     X = df[feature_cols].fillna(0)
     y = df[target_col]
@@ -148,6 +172,7 @@ def main():
         lap_features = extract_lap_features(db, years)
         quali_features = extract_qualifying_features(db, years)
         pace_features = extract_pace_features(db, years)
+        sector_features = extract_sector_features(db, years)
         
         print("\n" + "=" * 60)
         print("DATA SUMMARY")
@@ -155,6 +180,7 @@ def main():
         print(f"Lap feature records: {len(lap_features)}")
         print(f"Qualifying feature records: {len(quali_features)}")
         print(f"Pace feature records: {len(pace_features)}")
+        print(f"Sector feature records: {len(sector_features)}")
         
         if not lap_features.empty:
             print("\n" + "=" * 60)
@@ -183,6 +209,17 @@ def main():
             print("\nPace feature statistics:")
             print(pace_features.describe())
         
+        if not sector_features.empty:
+            print("\n" + "=" * 60)
+            print("SECTOR FEATURE SAMPLE")
+            print("=" * 60)
+            print(sector_features.head())
+            
+            print("\nSector feature statistics:")
+            print(sector_features.describe())
+        
+        all_importance = []
+        
         if not quali_features.empty:
             print("\n" + "=" * 60)
             print("FEATURE IMPORTANCE (Qualifying -> Position)")
@@ -193,10 +230,71 @@ def main():
             
             if len(df) > 10:
                 importance = compute_feature_importance(df)
+                importance["source"] = "qualifying"
                 print(importance.to_string(index=False))
+                all_importance.append(importance)
+        
+        if not sector_features.empty:
+            print("\n" + "=" * 60)
+            print("FEATURE IMPORTANCE (Sector Times -> Position)")
+            print("=" * 60)
+            
+            df = sector_features.copy()
+            
+            if "position" not in df.columns:
+                quali_cursor = db.f1_qualifying.find(
+                    {"year": {"$in": years}},
+                    {"year": 1, "circuit_ref": 1, "driver_code": 1, "position": 1}
+                )
+                quali_lookup = {f"{q['year']}_{q['circuit_ref']}_{q['driver_code']}": q["position"] 
+                              for q in quali_cursor}
                 
-                importance.to_csv("artifacts/feature_importance.csv", index=False)
-                print("\nSaved to artifacts/feature_importance.csv")
+                df["lookup_key"] = df["year"].astype(str) + "_" + df["circuit_ref"] + "_" + df["driver_code"]
+                df["position"] = df["lookup_key"].map(quali_lookup)
+            
+            df = df[df["position"].notna() & (df["position"] > 0)]
+            
+            if len(df) > 10:
+                importance = compute_feature_importance(df)
+                importance["source"] = "sector"
+                print(importance.to_string(index=False))
+                all_importance.append(importance)
+        
+        if not pace_features.empty:
+            print("\n" + "=" * 60)
+            print("FEATURE IMPORTANCE (Pace -> Position)")
+            print("=" * 60)
+            
+            df = pace_features.copy()
+            
+            if "position" not in df.columns:
+                quali_cursor = db.f1_qualifying.find(
+                    {"year": {"$in": years}},
+                    {"year": 1, "circuit_ref": 1, "driver_code": 1, "position": 1}
+                )
+                quali_lookup = {f"{q['year']}_{q['circuit_ref']}_{q['driver_code']}": q["position"] 
+                              for q in quali_cursor}
+                
+                df["lookup_key"] = df["year"].astype(str) + "_" + df["circuit_ref"] + "_" + df["constructor_ref"]
+                df["position"] = df["lookup_key"].map(quali_lookup)
+                df = df.drop(columns=["lookup_key"], errors="ignore")
+            
+            df = df[df["position"].notna() & (df["position"] > 0)]
+            
+            if len(df) > 10:
+                importance = compute_feature_importance(df)
+                importance["source"] = "pace"
+                print(importance.to_string(index=False))
+                all_importance.append(importance)
+        
+        if all_importance:
+            combined = pd.concat(all_importance, ignore_index=True)
+            combined.to_csv("artifacts/feature_importance.csv", index=False)
+            print("\n" + "=" * 60)
+            print("COMBINED FEATURE IMPORTANCE")
+            print("=" * 60)
+            print(combined.to_string(index=False))
+            print("\nSaved to artifacts/feature_importance.csv")
         
         print("\n" + "=" * 60)
         print("ANALYSIS COMPLETE")
