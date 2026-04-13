@@ -316,7 +316,21 @@ def extract_odds_features(db, min_year: int, max_year: int) -> pd.DataFrame:
 def extract_session_stats(db, min_year: int, max_year: int) -> pd.DataFrame:
     """
     Estrae feature da session_stats_YYYY (qualifying/practice stats).
-    Feature: best_sector_times, q3_time_ms, etc.
+    Feature: q1_ms, q2_ms, q3_ms, fastest_lap_ms, position.
+
+    Schema atteso da import_qualifying.py (TracingInsights):
+    {
+        "_id": "2024_01_VER",
+        "year": 2024,
+        "round": 1,
+        "driver_code": "VER",
+        "position": 1,
+        "q1_ms": 92547,
+        "q2_ms": 89612,
+        "q3_ms": 88291,
+        "fastest_lap_ms": 88291,
+        "source": "tracinginsights_qualifying"
+    }
     """
     log.info("Extracting session stats …")
     coll_names = db.list_collection_names()
@@ -333,15 +347,15 @@ def extract_session_stats(db, min_year: int, max_year: int) -> pd.DataFrame:
 
         coll = db[coll_name]
         docs = list(coll.find(
-            {"session_name": {"$in": ["Q", "Qualifying"]}},
-            {"year": 1, "round_num": 1, "driver": 1,
-             "best_lap_ms": 1, "s1_best_ms": 1, "s2_best_ms": 1, "s3_best_ms": 1,
-             "lap_count": 1, "_id": 0}
+            {},
+            {"year": 1, "round": 1, "driver_code": 1,
+             "q1_ms": 1, "q2_ms": 1, "q3_ms": 1,
+             "fastest_lap_ms": 1, "position": 1, "grid_position": 1, "_id": 0}
         ))
         for d in docs:
             d["year"] = d.get("year", year)
-            d["round"] = d.get("round_num", d.get("round", 0))
-            d["driver_code"] = d.get("driver", d.get("driver_code", ""))
+            d["round"] = d.get("round", 0)
+            d["driver_code"] = d.get("driver_code", "")
             rows.append(d)
 
     if not rows:
@@ -350,7 +364,7 @@ def extract_session_stats(db, min_year: int, max_year: int) -> pd.DataFrame:
 
     df = pd.DataFrame(rows)
     cols_to_keep = ["year", "round", "driver_code"]
-    for col in ["best_lap_ms", "s1_best_ms", "s2_best_ms", "s3_best_ms", "lap_count"]:
+    for col in ["q1_ms", "q2_ms", "q3_ms", "fastest_lap_ms", "position", "grid_position"]:
         if col in df.columns:
             cols_to_keep.append(col)
             df[col] = pd.to_numeric(df[col], errors="coerce")
