@@ -198,10 +198,15 @@ def extract_lap_features(db, min_year: int, max_year: int) -> pd.DataFrame:
     coll = db["f1_lap_times"]
 
     # Aggregation pipeline: group by (year, round, driver_code)
+    # Include all documents from 2019+ (they have is_valid field)
+    # For 2018 data, include documents without is_valid field (legacy data)
     pipeline = [
         {"$match": {
             "year": {"$gte": min_year, "$lte": max_year},
-            "is_valid": True
+            "$or": [
+                {"year": {"$gte": 2019}},  # 2019+ have is_valid=True
+                {"is_valid": {"$exists": False}}  # Include legacy 2018 data
+            ]
         }},
         {"$group": {
             "_id": {"year": "$year", "round": "$round", "driver_code": "$driver_code"},
