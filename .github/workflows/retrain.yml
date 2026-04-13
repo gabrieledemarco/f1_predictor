@@ -10,13 +10,13 @@ on:
   workflow_dispatch:
     inputs:
       year:
-        description: "Anno corrente (es. 2026)"
+        description: "Anno di validazione (es. 2023 per validare sul 2023 completo)"
         required: true
-        default: "2026"
+        default: "2023"
       through_round:
-        description: "Ultimo round completato (es. 5)"
+        description: "Ultimo round completato (es. 24 per stagione completa)"
         required: true
-        default: "1"
+        default: "24"
       dry_run:
         description: "Dry run (non salva su MongoDB)"
         required: false
@@ -55,15 +55,9 @@ jobs:
           pip install --upgrade pip
           pip install scikit-learn scipy numpy pandas pymongo[srv] requests python-dotenv
 
-      # ── Dati storici ──────────────────────────────────────────────
-      - name: Clone TracingInsights RaceData
-        run: |
-          git clone --depth=1 https://github.com/TracingInsights/RaceData.git data/racedata
-          rm -rf data/racedata/.git
-          echo "RaceData clonato: $(find data/racedata -name '*.csv' | wc -l) CSV files"
-
-      - name: Prepare fallback cache directory
-        run: mkdir -p data/cache/jolpica
+      # ── Dati storici (da MongoDB) ─────────────────────────────────
+      # I dati sono già importati in MongoDB tramite workflow ricorrenti
+      # Non serve clonare TracingInsights o preparare cache locale
 
       - name: Verify MongoDB data availability
         env:
@@ -108,15 +102,19 @@ jobs:
       - name: Determine training parameters
         id: params
         run: |
-          YEAR="${{ github.event.inputs.year || '2026' }}"
-          ROUND="${{ github.event.inputs.through_round || '1' }}"
+          YEAR="${{ github.event.inputs.year || '2023' }}"
+          ROUND="${{ github.event.inputs.through_round || '22' }}"
           DRY="${{ github.event.inputs.dry_run || 'false' }}"
           MC="${{ github.event.inputs.n_mc_sim || '50000' }}"
+          # val_from = YEAR per validare solo sull'anno target
+          # Con YEAR=2023, val_from=2023: train=2018-2022, test=2023
+          VAL_FROM=$YEAR
           echo "year=$YEAR"       >> $GITHUB_OUTPUT
           echo "round=$ROUND"     >> $GITHUB_OUTPUT
           echo "dry_run=$DRY"     >> $GITHUB_OUTPUT
           echo "n_mc_sim=$MC"     >> $GITHUB_OUTPUT
-          echo "Training: Anno $YEAR Round $ROUND | MC=$MC | dry_run=$DRY"
+          echo "val_from=$VAL_FROM" >> $GITHUB_OUTPUT
+          echo "Training: train=2018-$((YEAR-1)), test=$YEAR | R$ROUND | MC=$MC"
 
       - name: Run training pipeline
         env:
@@ -133,7 +131,7 @@ jobs:
             --year ${{ steps.params.outputs.year }} \
             --through-round ${{ steps.params.outputs.round }} \
             --train-from 2018 \
-            --val-from 2024 \
+            --val-from ${{ steps.params.outputs.val_from }} \
             --n-mc-sim ${{ steps.params.outputs.n_mc_sim }} \
             --ridge-alpha 10.0 \
             $DRY_FLAG

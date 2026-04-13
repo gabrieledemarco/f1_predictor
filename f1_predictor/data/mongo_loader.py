@@ -15,6 +15,7 @@ from pymongo.database import Database
 @dataclass
 class RaceResult:
     driver_code: str
+    driver_id: str  # Added to match MongoDB structure
     constructor_ref: str
     grid_position: int
     finish_position: Optional[int]
@@ -54,7 +55,19 @@ class Race:
     @classmethod
     def from_dict(cls, doc: Dict) -> "Race":
         results = [
-            RaceResult(**r) for r in doc.get("results", [])
+            RaceResult(
+                driver_code=r.get("driver_code", ""),
+                driver_id=r.get("driver_id", ""),
+                constructor_ref=r.get("constructor_ref", ""),
+                grid_position=r.get("grid_position", 0),
+                finish_position=r.get("finish_position"),
+                points=float(r.get("points", 0)),
+                laps_completed=r.get("laps_completed", 0),
+                status=r.get("status", ""),
+                fastest_lap_rank=r.get("fastest_lap_rank"),
+                fastest_lap_time=r.get("fastest_lap_time"),
+            )
+            for r in doc.get("results", [])
         ]
         qualifying = [
             QualifyingResult(

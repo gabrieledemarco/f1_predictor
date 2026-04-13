@@ -4,6 +4,16 @@ Data Module - Unified Data Loading
 This module provides unified data loading from MongoDB.
 All data is imported via GitHub Actions workflows and stored in MongoDB.
 
+DEPRECATED LEGACY LOADERS (for backward compatibility only):
+    - loader_jolpica.JolpicaLoader (use MongoRaceLoader instead)
+    - loader_tracinginsights.TracingInsightsLoader (use MongoPaceLoader instead)
+    - loader_kaggle.KaggleRaceDataLoader (use MongoPaceLoader instead)
+    - loader_odds.OddsLoader (use MongoOddsLoader instead)
+
+These legacy loaders are kept only for compatibility with existing code
+and will be removed in a future version. All data should now be imported
+via GitHub Actions workflows.
+
 Usage in train_pipeline.py:
     from data import MongoRaceLoader, MongoPaceLoader, MongoOddsLoader
     
@@ -77,6 +87,10 @@ def load_training_data_from_mongo(
     db,
     years: range | list[int] = range(2019, 2027),
     through_round: Optional[int] = None,
+    jolpica_cache: Optional[str] = None,
+    tracinginsights_dir: Optional[str] = None,
+    use_synthetic_fallback: bool = True,
+    force_refresh: bool = False,
 ) -> list[dict]:
     """
     Load training data from MongoDB.
@@ -85,6 +99,10 @@ def load_training_data_from_mongo(
         db: MongoDB database connection
         years: Range of seasons to load
         through_round: Truncate last season to this round
+        jolpica_cache: Ignored (for compatibility with train_pipeline.py)
+        tracinginsights_dir: Ignored (for compatibility with train_pipeline.py)
+        use_synthetic_fallback: If True and no data found, return empty list
+        force_refresh: Ignored (for compatibility)
         
     Returns:
         List of race dicts ready for F1PredictionPipeline.fit()
@@ -156,6 +174,8 @@ def load_calibration_records_from_mongo(
     
     return records
 
+
+load_training_data = load_training_data_from_mongo
 
 __all__ = [
     "MongoRaceLoader",

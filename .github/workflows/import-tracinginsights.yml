@@ -23,46 +23,27 @@ env:
   MONGO_DB: ${{ vars.MONGO_DB || 'betbreaker' }}
 
 jobs:
-  # ── Job unico: clone + import lap times ────────────────────────────────
-  # NOTA: sync e import devono stare nello stesso job perché i runner
-  # GitHub Actions sono efimeri — il filesystem non è condiviso tra job.
   sync-and-import:
-    name: Sync TracingInsights & Import to MongoDB
+    name: Sync & Import TracingInsights to MongoDB
     runs-on: ubuntu-latest
     timeout-minutes: 60
     environment: MONGODB_URI
     outputs:
-      year:     ${{ steps.setup-year.outputs.year }}
-      min_year: ${{ steps.setup-year.outputs.min_year }}
-      max_year: ${{ steps.setup-year.outputs.max_year }}
+      year: ${{ steps.setup-year.outputs.year }}
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Determine year range
+      - name: Determine year
         id: setup-year
         env:
-          MAX_YEAR_INPUT: ${{ inputs.max_year || '' }}
+          YEAR: ${{ inputs.year || '' }}
         run: |
           CURRENT_YEAR=$(date +%Y)
-          MAX_YEAR="${MAX_YEAR_INPUT:-$CURRENT_YEAR}"
-          MIN_YEAR="${{ inputs.min_year || '2019' }}"
-          echo "min_year=$MIN_YEAR" >> $GITHUB_OUTPUT
-          echo "max_year=$MAX_YEAR" >> $GITHUB_OUTPUT
-          echo "year=$MAX_YEAR" >> $GITHUB_OUTPUT
-          echo "Range anni: $MIN_YEAR – $MAX_YEAR"
-
-      - name: Clone TracingInsights RaceData
-        run: |
-          git clone --depth 1 https://github.com/TracingInsights/RaceData.git data/racedata
-          rm -rf data/racedata/.git
-          rm -rf data/racedata/.github
-          echo "RaceData clonato: $(find data/racedata -name '*.csv' | wc -l) CSV files"
-          echo "=== Struttura directory (prime 4 livelli) ==="
-          find data/racedata -maxdepth 4 -type d | head -60
-          echo "=== File CSV trovati ==="
-          find data/racedata -name '*.csv' | head -30
+          SELECTED_YEAR="${YEAR:-$CURRENT_YEAR}"
+          echo "year=$SELECTED_YEAR" >> $GITHUB_OUTPUT
+          echo "Anno selezionato: $SELECTED_YEAR"
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -72,19 +53,20 @@ jobs:
       - name: Install dependencies
         run: pip install pymongo python-dotenv pandas
 
-      - name: Import lap times → MongoDB
-        run: |
-          FORCE_FLAG=""
-          if [ "${{ inputs.force }}" = "true" ]; then FORCE_FLAG="--force"; fi
-          python scripts/import_tracinginsights.py \
-            --min-year ${{ steps.setup-year.outputs.min_year }} \
-            --max-year ${{ steps.setup-year.outputs.max_year }} \
-            $FORCE_FLAG
+      - name: Cleanup old lap times
+        run: python scripts/cleanup_old_lap_times.py
         env:
           MONGODB_URI: ${{ secrets.MONGODB_URI }}
           MONGO_DB: ${{ vars.MONGO_DB || 'betbreaker' }}
 
-  # ── Job separato: calcolo pace (legge da MongoDB, non dal filesystem) ──
+      - name: Import lap times → MongoDB
+        run: python scripts/import_tracinginsights.py
+        env:
+          MONGODB_URI: ${{ secrets.MONGODB_URI }}
+          MONGO_DB: ${{ vars.MONGO_DB || 'betbreaker' }}
+          YEAR: ${{ steps.setup-year.outputs.year }}
+          FORCE: ${{ inputs.force || 'false' }}
+
   compute-pace:
     name: Compute Constructor Pace Observations
     runs-on: ubuntu-latest
@@ -109,8 +91,7 @@ jobs:
         env:
           MONGODB_URI: ${{ secrets.MONGODB_URI }}
           MONGO_DB: ${{ vars.MONGO_DB || 'betbreaker' }}
-          MIN_YEAR: ${{ needs.sync-and-import.outputs.min_year }}
-          MAX_YEAR: ${{ needs.sync-and-import.outputs.max_year }}
+          YEAR: ${{ needs.sync-and-import.outputs.year }}
 
   notify:
     name: Notify on failure

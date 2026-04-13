@@ -1,6 +1,15 @@
 """
 data/loader_odds.py
 ===================
+DEPRECATED: This loader is deprecated. Use MongoDB loaders instead.
+    - Import odds via GitHub Actions workflows (import-pinnacle-odds.yml)
+    - Load via: from f1_predictor.data import MongoOddsLoader
+
+This module is kept only for backward compatibility and will be removed
+in a future version.
+
+---
+
 Carica quote Pinnacle F1 via The Odds API e produce CalibrationRecord
 entities per il Layer 4 (Isotonic Calibrator).
 

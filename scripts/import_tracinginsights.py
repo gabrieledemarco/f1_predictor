@@ -5,6 +5,7 @@ Import TracingInsights Lap Data to MongoDB
 Reads the TracingInsights/RaceData flat Ergast-style CSVs and imports
 lap-by-lap data into MongoDB f1_lap_times collection.
 
+<<<<<<< HEAD
 TracingInsights/RaceData actual repo layout:
     data/racedata/
         data/
@@ -17,6 +18,13 @@ Usage:
     python scripts/import_tracinginsights.py
     python scripts/import_tracinginsights.py --min-year 2022 --max-year 2025
     python scripts/import_tracinginsights.py --force
+=======
+Parses TracingInsights CSV files (Ergast format) and imports lap-by-lap data
+into MongoDB f1_lap_times collection.
+
+Usage:
+    python scripts/import_tracinginsights.py [--year YEAR] [--force]
+>>>>>>> origin/feat/data-unification
 """
 
 import os
@@ -24,9 +32,8 @@ import sys
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, Optional
 
-import pandas as pd
 from dotenv import load_dotenv
 from pymongo import MongoClient, UpdateOne
 from pymongo.errors import PyMongoError
@@ -76,6 +83,7 @@ def get_mongo_client():
     return client[mongo_db]
 
 
+<<<<<<< HEAD
 def find_data_dir(racedata_path: Path) -> Optional[Path]:
     """
     Locate the directory containing the flat CSVs (lap_times.csv, races.csv, etc.)
@@ -342,20 +350,124 @@ def import_flat_lap_times(
                 race_skipped += 1
                 continue
 
+=======
+def load_circuit_mapping(circuits_csv_path: Path) -> Dict[int, str]:
+    """Load circuits.csv and return mapping from circuitId to circuitRef."""
+    mapping = {}
+    with open(circuits_csv_path, "r", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            circuit_id = int(row.get("circuitId", 0))
+            circuit_ref = row.get("circuitRef", "").strip().lower()
+            if circuit_ref and circuit_ref != "\\N":
+                mapping[circuit_id] = circuit_ref
+    return mapping
+
+
+def load_race_mapping(races_csv_path: Path, target_year: int, circuit_mapping: Dict[int, str]) -> Dict[int, dict]:
+    """Load races.csv and return mapping from raceId to {year, round, circuit_ref}."""
+    mapping = {}
+    with open(races_csv_path, "r", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            year = int(row.get("year", 0))
+            if year != target_year:
+                continue
+            race_id = int(row.get("raceId", 0))
+            circuit_id = int(row.get("circuitId", 0))
+            circuit_ref = circuit_mapping.get(circuit_id, f"circuit_{circuit_id}")
+            mapping[race_id] = {
+                "year": year,
+                "round": int(row.get("round", 0)),
+                "circuit_ref": circuit_ref,
+                "name": row.get("name", ""),
+            }
+    return mapping
+
+
+def load_driver_mapping(drivers_csv_path: Path) -> Dict[int, str]:
+    """Load drivers.csv and return mapping from driverId to driver code."""
+    mapping = {}
+    with open(drivers_csv_path, "r", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            driver_id = int(row.get("driverId", 0))
+            code = row.get("code", "").strip()
+            if code and code != "\\N":
+                mapping[driver_id] = code
+            else:
+                driver_ref = row.get("driverRef", "").strip()
+                if driver_ref:
+                    mapping[driver_id] = driver_ref[:3].upper()
+    return mapping
+
+
+def import_laps_csv(db, laps_csv_path: Path, race_mapping: Dict[int, dict], 
+                    driver_mapping: Dict[int, str], target_year: int, force: bool) -> int:
+    """Import laps from lap_times.csv file."""
+    imported_count = 0
+    skipped_count = 0
+    operations = []
+    
+    with open(laps_csv_path, "r", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            race_id = int(row.get("raceId", 0))
+            
+            if race_id not in race_mapping:
+                skipped_count += 1
+                continue
+            
+            race_info = race_mapping[race_id]
+            if race_info["year"] != target_year:
+                continue
+            
+            driver_id = int(row.get("driverId", 0))
+            driver_code = driver_mapping.get(driver_id, f"D{driver_id}")
+            
+            lap_number = int(row.get("lap", 0))
+            position = int(row.get("position", 0)) if row.get("position") else 0
+            
+            milliseconds_raw = row.get("milliseconds", "")
+            lap_time_ms = None
+            if milliseconds_raw and milliseconds_raw != "\\N":
+                try:
+                    lap_time_ms = float(milliseconds_raw)
+                except ValueError:
+                    pass
+            
+            if lap_time_ms is None:
+                skipped_count += 1
+                continue
+            
+            circuit_ref = race_info["circuit_ref"]
+            year = race_info["year"]
+            round_num = race_info["round"]
+            
+            doc_id = f"{year}_R{round_num}_{circuit_ref}_{driver_code}_L{lap_number}"
+            
+>>>>>>> origin/feat/data-unification
             doc = {
-                "_id": f"{year}_{circuit_ref}_{driver_code}_{lap_number}",
+                "_id": doc_id,
                 "year": year,
                 "round": round_num,
                 "circuit_ref": circuit_ref,
                 "driver_code": driver_code,
+<<<<<<< HEAD
                 "team": "",        # lap_times.csv doesn't include team — joined from results later
+=======
+>>>>>>> origin/feat/data-unification
                 "lap_number": lap_number,
+                "position": position,
                 "lap_time_ms": lap_time_ms,
+<<<<<<< HEAD
                 "fuel_corrected_ms": lap_time_ms,  # no fuel correction in flat CSV
                 "compound": "UNKNOWN",   # lap_times.csv doesn't include tyre data
                 "tyre_life": 0,
                 "is_personal_best": False,
                 "is_valid": True,
+=======
+>>>>>>> origin/feat/data-unification
                 "imported_at": datetime.utcnow().isoformat() + "Z",
                 "source": "tracinginsights",
             }
@@ -365,6 +477,7 @@ def import_flat_lap_times(
                 {"$set": doc},
                 upsert=True
             ))
+<<<<<<< HEAD
             race_imported += 1
 
             if len(operations) >= 2000:
@@ -470,10 +583,28 @@ def enrich_teams_from_results(db, data_dir: Path, race_info: dict, driver_code_m
 
     print(f"  Team enrichment: {updated:,} lap records updated")
     return updated
+=======
+            
+            if len(operations) >= 1000:
+                if operations:
+                    result = db.f1_lap_times.bulk_write(operations, ordered=False)
+                    imported_count += result.upserted_count + result.modified_count
+                operations = []
+        
+        if operations:
+            result = db.f1_lap_times.bulk_write(operations, ordered=False)
+            imported_count += result.upserted_count + result.modified_count
+    
+    if skipped_count > 0:
+        print(f"    (skipped {skipped_count} rows without valid lap times)")
+    
+    return imported_count
+>>>>>>> origin/feat/data-unification
 
 
 def main():
     import argparse
+<<<<<<< HEAD
     parser = argparse.ArgumentParser(description="Import TracingInsights flat lap data to MongoDB")
     parser.add_argument("--year",     type=int, help="Anno singolo (override min/max)")
     parser.add_argument("--min-year", type=int, default=int(os.environ.get("MIN_YEAR", "2019")),
@@ -485,6 +616,13 @@ def main():
                         help="Reimporta anche se già importato")
     parser.add_argument("--skip-enrich", action="store_true",
                         help="Salta l'arricchimento team da results.csv")
+=======
+    parser = argparse.ArgumentParser(description="Import TracingInsights lap data to MongoDB")
+    year_env = os.environ.get("YEAR", "").strip()
+    default_year = int(year_env) if year_env else datetime.now().year
+    parser.add_argument("--year", type=int, default=default_year)
+    parser.add_argument("--force", action="store_true", default=os.environ.get("FORCE", "false").lower() == "true")
+>>>>>>> origin/feat/data-unification
     args = parser.parse_args()
 
     if args.year:
@@ -503,6 +641,7 @@ def main():
         print("Clone TracingInsights repository first:")
         print("  git clone https://github.com/TracingInsights/RaceData.git data/racedata")
         sys.exit(1)
+<<<<<<< HEAD
 
     # Find where the flat CSVs live
     data_dir = find_data_dir(racedata_path)
@@ -552,12 +691,91 @@ def main():
         print(f"f1_lap_times collection totale: {count:,} documenti")
         print("=" * 65)
 
+=======
+    
+    data_path = racedata_path / "data"
+    if not data_path.exists():
+        print(f"[ERROR] {data_path} directory not found")
+        sys.exit(1)
+    
+    laps_csv = data_path / "lap_times.csv"
+    races_csv = data_path / "races.csv"
+    drivers_csv = data_path / "drivers.csv"
+    
+    if not laps_csv.exists():
+        print(f"[ERROR] {laps_csv} not found")
+        sys.exit(1)
+    if not races_csv.exists():
+        print(f"[ERROR] {races_csv} not found")
+        sys.exit(1)
+    if not drivers_csv.exists():
+        print(f"[ERROR] {drivers_csv} not found")
+        sys.exit(1)
+    
+    try:
+        db = get_mongo_client()
+        print("Connected to MongoDB")
+        
+        db.f1_lap_times.create_index([
+            ("year", 1), ("round", 1), ("driver_code", 1)
+        ])
+        db.f1_lap_times.create_index([("year", 1), ("lap_number", 1)])
+        db.f1_lap_times.create_index([("circuit_ref", 1)])
+        
+        print("Loading circuit mapping...")
+        circuits_csv = data_path / "circuits.csv"
+        if not circuits_csv.exists():
+            print(f"[WARNING] {circuits_csv} not found - circuit_ref will use circuit ID")
+            circuit_mapping = {}
+        else:
+            circuit_mapping = load_circuit_mapping(circuits_csv)
+            print(f"  Found {len(circuit_mapping)} circuits")
+
+        print("\nLoading race mapping...")
+        race_mapping = load_race_mapping(races_csv, args.year, circuit_mapping)
+        print(f"  Found {len(race_mapping)} races for {args.year}")
+        
+        if not race_mapping:
+            print(f"[ERROR] No races found for year {args.year}")
+            sys.exit(1)
+        
+        print("Loading driver mapping...")
+        driver_mapping = load_driver_mapping(drivers_csv)
+        print(f"  Found {len(driver_mapping)} drivers")
+        
+        print(f"\nImporting lap times from {args.year}...")
+        total_laps = import_laps_csv(db, laps_csv, race_mapping, driver_mapping, args.year, args.force)
+        
+        print("\n" + "=" * 60)
+        print(f"COMPLETED: {total_laps} laps imported")
+        print("=" * 60)
+        
+        db.f1_import_log.update_one(
+            {
+                "source": "tracinginsights",
+                "year": args.year,
+                "type": "laps",
+            },
+            {
+                "$set": {
+                    "imported_at": datetime.utcnow().isoformat() + "Z",
+                    "laps_count": total_laps,
+                }
+            },
+            upsert=True
+        )
+        
+>>>>>>> origin/feat/data-unification
     except PyMongoError as e:
         print(f"\n[MongoDB Error] {e}")
         sys.exit(1)
     except Exception as e:
         import traceback
         print(f"\n[Error] {e}")
+<<<<<<< HEAD
+=======
+        import traceback
+>>>>>>> origin/feat/data-unification
         traceback.print_exc()
         sys.exit(1)
 

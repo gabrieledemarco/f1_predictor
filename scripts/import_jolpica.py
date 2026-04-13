@@ -13,6 +13,7 @@ import os
 import sys
 import json
 import time
+import logging
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -22,7 +23,12 @@ from dotenv import load_dotenv
 from pymongo import MongoClient, UpdateOne
 from pymongo.errors import PyMongoError
 
+from rate_limiter import RateLimiter
+
 load_dotenv()
+
+logging.basicConfig(level=logging.INFO)
+log = logging.getLogger(__name__)
 
 JOLPICA_BASE_URL = "https://api.jolpi.ca/ergast/f1"
 CIRCUIT_TYPES = {
@@ -51,6 +57,8 @@ CIRCUIT_TYPES = {
     "zhangjiang": "desert",
 }
 
+jolpica_limiter = RateLimiter(requests_per_second=3.0, max_retries=5, backoff_factor=2.0)
+
 
 def get_mongo_client():
     mongo_uri = os.environ.get("MONGODB_URI")
@@ -63,20 +71,25 @@ def get_mongo_client():
 
 
 def fetch_json(url: str, params: dict = None) -> Optional[dict]:
-    """Fetch JSON from Jolpica API with rate limiting."""
-    for attempt in range(3):
-        try:
-            response = requests.get(url, params=params, timeout=30)
-            response.raise_for_status()
-            time.sleep(0.25)
-            return response.json()
-        except requests.exceptions.RequestException as e:
-            print(f"  Attempt {attempt + 1} failed: {e}")
-            if attempt < 2:
-                time.sleep(2 ** attempt)
-            else:
-                return None
-    return None
+    """Fetch JSON from Jolpica API with rate limiting and retry logic."""
+    try:
+        response = jolpica_limiter.request_with_retry("GET", url, params=params, timeout=30)
+        
+        if response.status_code == 429:
+            retry_after = int(response.headers.get("Retry-After", 60))
+            log.warning(f"Rate limited. Waiting {retry_after}s...")
+            time.sleep(retry_after)
+            return fetch_json(url, params)
+        
+        if response.status_code >= 400:
+            log.error(f"API error {response.status_code} for {url}")
+            return None
+        
+        return response.json()
+        
+    except Exception as e:
+        log.error(f"Failed to fetch {url}: {e}")
+        return None
 
 
 def parse_race_data(race_data: dict, year: int, round_num: int) -> dict:
