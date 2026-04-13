@@ -41,8 +41,8 @@ jobs:
           rm -rf data/racedata/.git
           rm -rf data/racedata/.github
           echo "RaceData clonato: $(find data/racedata -name '*.csv' | wc -l) CSV files"
-          echo "=== Directory structure ==="
-          find data/racedata -maxdepth 3 -type d
+          ls -la data/racedata/
+          ls -la data/racedata/data/ 2>/dev/null || echo "no data/ subdir"
 
       - name: Determine year
         id: setup-year
