@@ -423,15 +423,17 @@ def build_feature_matrix(
 # Analysis functions
 # ─────────────────────────────────────────────────────────────────────────────
 
+# ALL features for Spearman/MI correlation analysis (includes in-race features)
 NUMERIC_FEATURES = [
-    # Race context
+    # Race context (pre-race)
     "grid_position",
     "grid_position_pct",
+    # Temporal — EXCLUDED from ML model (leakage), kept only for correlation
     "year",
     "round",
-    # Constructor pace
+    # Constructor pace (in-race: computed from same race laps)
     "pace_delta_ms",
-    # Lap telemetry (TracingInsights)
+    # Lap telemetry IN-RACE (TracingInsights — same race data, data leakage for prediction)
     "avg_lap_ms",
     "min_lap_ms",
     "std_lap_ms",
@@ -445,16 +447,49 @@ NUMERIC_FEATURES = [
     "avg_tyre_life",
     "max_tyre_life",
     "pb_rate",
-    # Odds
+    # Odds (pre-race)
     "odds_p_novig",
     "odds_p_implied",
-    # Session stats (qualifying)
+    # Session stats — qualifying times (pre-race)
     "best_lap_ms",
     "s1_best_ms",
     "s2_best_ms",
     "s3_best_ms",
     "lap_count",
-    # Circuit profiles
+    # Circuit profiles (pre-race, static)
+    "top_speed_kmh",
+    "full_throttle_pct",
+    "avg_speed_kmh",
+    "drs_zones",
+    "corner_count",
+    "slow_corners",
+    "medium_corners",
+    "fast_corners",
+    # Circuit type one-hot (pre-race)
+    "ct_street",
+    "ct_high_df",
+    "ct_high_speed",
+    "ct_mixed",
+    "ct_unknown",
+]
+
+# PRE-RACE features only — used for the ML model to get a realistic pre-race MAE.
+# Excludes: (1) in-race lap telemetry, (2) temporal leakage features (year, round),
+# (3) in-race pace_delta_ms (derived from same race lap times).
+PRERACE_FEATURES = [
+    # Qualifying / grid
+    "grid_position",
+    "grid_position_pct",
+    # Market odds (most predictive pre-race signal)
+    "odds_p_novig",
+    "odds_p_implied",
+    # Qualifying session times
+    "best_lap_ms",
+    "s1_best_ms",
+    "s2_best_ms",
+    "s3_best_ms",
+    "lap_count",
+    # Circuit characteristics (static, known before race)
     "top_speed_kmh",
     "full_throttle_pct",
     "avg_speed_kmh",
@@ -787,9 +822,17 @@ def main():
     print("  [2/5] Mutual Information …")
     mi_results = run_mutual_information(df, available_features)
 
-    print("  [3/5] Random Forest (MDI + Permutation) …")
+    # RF runs on ALL features (for MDI/permutation importance rankings)
+    print("  [3/5] Random Forest (MDI + Permutation) on all features …")
     rf_result = run_random_forest(df, available_features)
     rf_mdi_results, perm_results, rf_meta = rf_result if len(rf_result) == 3 else ([], [], {})
+
+    # ALSO run RF on PRE-RACE features only to get a leakage-free MAE
+    # Pre-race features: no in-race lap times, no year/round temporal leakage
+    available_prerace = [f for f in PRERACE_FEATURES if f in df.columns]
+    print(f"  [3b] Random Forest on PRE-RACE features only ({len(available_prerace)} feats) …")
+    rf_prerace_result = run_random_forest(df, available_prerace)
+    _, _, rf_prerace_meta = rf_prerace_result if len(rf_prerace_result) == 3 else ([], [], {})
 
     print("  [4/5] Gradient Boosting …")
     gb_results = run_gradient_boosting(df, available_features)
@@ -815,7 +858,14 @@ def main():
             "max_year":     args.max_year,
             "n_observations": int(len(df)),
             "n_features":   len(available_features),
+            "n_prerace_features": len(available_prerace),
             "target":       TARGET,
+            "leakage_note": (
+                "In-race lap telemetry features (avg_lap_ms, lap_time_delta_pct, etc.) "
+                "derive from the same race being predicted — they are valid for correlation "
+                "analysis but cause data leakage in the ML model. "
+                "rf_meta uses ALL features; rf_prerace_meta uses only pre-race features."
+            ),
         },
         "data_sources": {
             "f1_races":             int(len(df_races)),
@@ -825,7 +875,8 @@ def main():
             "odds":                 int(len(df_odds)),
             "session_stats":        int(len(df_session)),
         },
-        "rf_meta":           rf_meta,
+        "rf_meta":          rf_meta,           # all features (includes in-race)
+        "rf_prerace_meta":  rf_prerace_meta,   # pre-race features only (no leakage)
         "top_features":      df_rankings.head(20).to_dict(orient="records"),
         "spearman":          spearman_results,
         "mutual_information": mi_results,
@@ -859,8 +910,13 @@ def main():
         )
 
     print()
-    print(f"RF cross-val MAE: {rf_meta.get('cv_mae', 'N/A')} positions  "
-          f"(n={rf_meta.get('n_train', 'N/A')})")
+    mae_all    = rf_meta.get("cv_mae", "N/A")
+    mae_prerace = rf_prerace_meta.get("cv_mae", "N/A")
+    n_all      = rf_meta.get("n_train", "N/A")
+    n_prerace  = rf_prerace_meta.get("n_train", "N/A")
+    print(f"RF cross-val MAE (all features, incl. in-race): {mae_all} positions  (n={n_all})")
+    print(f"RF cross-val MAE (pre-race features only):      {mae_prerace} positions  (n={n_prerace})")
+    print(f"  -> In-race leakage inflates MAE by ~{round(float(mae_prerace or 0) - float(mae_all or 0), 2)} pos")
     print()
     print("Output files:")
     print(f"  {report_path}")
