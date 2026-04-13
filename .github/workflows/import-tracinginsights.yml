@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       year:
-        description: 'Year to import (default: current year)'
+        description: 'Year to import (default: all years 2018-2025)'
         required: false
         default: ''
       force:
@@ -22,24 +22,27 @@ jobs:
   sync-and-import:
     name: Sync & Import TracingInsights to MongoDB
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 90
     environment: MONGODB_URI
     outputs:
-      year: ${{ steps.setup-year.outputs.year }}
+      years: ${{ steps.setup-years.outputs.years }}
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Determine year
-        id: setup-year
+      - name: Determine years to import
+        id: setup-years
         env:
           YEAR: ${{ inputs.year || '' }}
         run: |
-          CURRENT_YEAR=$(date +%Y)
-          SELECTED_YEAR="${YEAR:-$CURRENT_YEAR}"
-          echo "year=$SELECTED_YEAR" >> $GITHUB_OUTPUT
-          echo "Anno selezionato: $SELECTED_YEAR"
+          if [ -n "$YEAR" ]; then
+            echo "years=[$YEAR]" >> $GITHUB_OUTPUT
+            echo "Anno selezionato: $YEAR"
+          else
+            echo "years=[2018,2019,2020,2021,2022,2023,2024,2025]" >> $GITHUB_OUTPUT
+            echo "Importing all years: 2018-2025"
+          fi
 
       - name: Clone TracingInsights RaceData
         run: |
@@ -54,8 +57,11 @@ jobs:
           python-version: '3.11'
 
       - name: Install dependencies
-        run: pip install pymongo python-dotenv pandas
+        run: pip install pymongo python-dotenv pandas numpy scipy scikit-learn
 
+      # ========================================================================
+      # LAP TIMES
+      # ========================================================================
       - name: Cleanup old lap times
         run: python scripts/cleanup_old_lap_times.py
         env:
@@ -67,7 +73,29 @@ jobs:
         env:
           MONGODB_URI: ${{ secrets.MONGODB_URI }}
           MONGO_DB: ${{ vars.MONGO_DB || 'betbreaker' }}
-          YEAR: ${{ steps.setup-year.outputs.year }}
+          YEAR: ${{ steps.setup-years.outputs.years }}
+          FORCE: ${{ inputs.force || 'false' }}
+
+      # ========================================================================
+      # QUALIFYING (NEW)
+      # ========================================================================
+      - name: Import qualifying data → MongoDB
+        run: python scripts/import_qualifying.py
+        env:
+          MONGODB_URI: ${{ secrets.MONGODB_URI }}
+          MONGO_DB: ${{ vars.MONGO_DB || 'betbreaker' }}
+          YEARS: ${{ steps.setup-years.outputs.years }}
+          FORCE: ${{ inputs.force || 'false' }}
+
+      # ========================================================================
+      # PIT STOPS (NEW)
+      # ========================================================================
+      - name: Import pit stops → MongoDB
+        run: python scripts/import_pit_stops.py
+        env:
+          MONGODB_URI: ${{ secrets.MONGODB_URI }}
+          MONGO_DB: ${{ vars.MONGO_DB || 'betbreaker' }}
+          YEARS: ${{ steps.setup-years.outputs.years }}
           FORCE: ${{ inputs.force || 'false' }}
 
   compute-pace:
@@ -94,12 +122,45 @@ jobs:
         env:
           MONGODB_URI: ${{ secrets.MONGODB_URI }}
           MONGO_DB: ${{ vars.MONGO_DB || 'betbreaker' }}
-          YEAR: ${{ needs.sync-and-import.outputs.year }}
+          YEAR: ${{ needs.sync-and-import.outputs.years }}
+
+  feature-analysis:
+    name: Feature Selection Analysis
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    needs: compute-pace
+    environment: MONGODB_URI
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install pymongo python-dotenv pandas numpy scipy scikit-learn matplotlib seaborn shap
+
+      - name: Run feature analysis
+        run: python scripts/feature_selection_analysis.py
+        env:
+          MONGODB_URI: ${{ secrets.MONGODB_URI }}
+          MONGO_DB: ${{ vars.MONGO_DB || 'betbreaker' }}
+
+      - name: Upload report
+        uses: actions/upload-artifact@v4
+        with:
+          name: feature-analysis-report
+          path: |
+            docs/feature_selection_analysis.md
+            artifacts/feature_*.png
 
   notify:
     name: Notify on failure
     runs-on: ubuntu-latest
-    needs: [sync-and-import, compute-pace]
+    needs: [sync-and-import, compute-pace, feature-analysis]
     if: failure()
     
     steps:
