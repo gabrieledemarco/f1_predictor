@@ -103,19 +103,24 @@ def compute_pace_observations(db, years: List[int], source: str = "") -> int:
     
     print(f"  Aggregated to {len(agg)} constructor-race combinations")
     
-    constructor_medians = agg.groupby(["year", "constructor_ref"])["avg_pace"].median()
+    # FIX: Calculate field median (median of ALL teams in each race), NOT team median
+    # This gives pace_delta relative to the field, not relative to the team's own median
+    field_medians = agg.groupby(["year", "round"])["avg_pace"].median()
     
     operations = []
     computed = 0
     
     for _, row in agg.iterrows():
         year = row["year"]
+        round_num = row["round"]
         team = row["constructor_ref"]
         
-        team_median = float(constructor_medians.get((year, team), row["avg_pace"]) or row["avg_pace"])
+        # Get field median for this specific race (year + round)
+        field_median = float(field_medians.get((year, round_num), row["avg_pace"]) or row["avg_pace"])
         
-        if team_median and team_median > 0:
-            pace_delta = (row["avg_pace"] - team_median) / 1000
+        if field_median and field_median > 0:
+            # Pace delta vs FIELD median (negative = faster than field)
+            pace_delta = (row["avg_pace"] - field_median) / 1000
         else:
             pace_delta = 0.0
         
