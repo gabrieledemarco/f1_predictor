@@ -482,6 +482,8 @@ def run_spearman_correlation(df: pd.DataFrame, features: list[str]) -> list[dict
         if len(mask) < 30:
             continue
         rho, pval = spearmanr(mask[feat], mask[TARGET])
+        if not np.isfinite(rho) or not np.isfinite(pval):
+            continue
         results.append({
             "feature": feat,
             "spearman_rho": round(float(rho), 4),
@@ -633,8 +635,13 @@ def aggregate_rankings(
     def rank_dict(results: list[dict], key: str) -> dict[str, float]:
         if not results:
             return {}
-        vals = {r["feature"]: abs(r[key]) for r in results}
+        vals = {}
+        for r in results:
+            v = abs(r[key])
+            vals[r["feature"]] = 0.0 if (v != v or not np.isfinite(v)) else v
         max_v = max(vals.values()) if vals else 1.0
+        if not max_v or not np.isfinite(max_v):
+            max_v = 1.0
         return {f: v / max_v for f, v in vals.items()}
 
     all_feats = set()
@@ -666,6 +673,8 @@ def aggregate_rankings(
             0.25 * pm_s +
             0.15 * gb_s
         ) * cov  # penalise low-coverage features
+        if not np.isfinite(composite):
+            composite = 0.0
 
         rows.append({
             "feature":           feat,
