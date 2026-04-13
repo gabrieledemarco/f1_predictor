@@ -1,0 +1,847 @@
+{
+  "generated_at": "2026-04-13T08:26:54.157871Z",
+  "config": {
+    "min_year": 2019,
+    "max_year": 2026,
+    "n_observations": 3104,
+    "n_features": 16,
+    "target": "finish_position"
+  },
+  "data_sources": {
+    "f1_races": 3104,
+    "f1_pace_observations": 1519,
+    "f1_circuit_profiles": 22,
+    "f1_lap_times": 0,
+    "odds": 0,
+    "session_stats": 0
+  },
+  "rf_meta": {
+    "cv_mae": 5.0788,
+    "n_train": 2356
+  },
+  "top_features": [
+    {
+      "rank": 1,
+      "feature": "pace_delta_ms",
+      "composite_score": 0.7359,
+      "spearman_norm": 0.6833,
+      "mi_norm": 0.0,
+      "rf_mdi_norm": 1.0,
+      "perm_norm": 1.0,
+      "gb_norm": 1.0,
+      "coverage_pct": 97.8
+    },
+    {
+      "rank": 2,
+      "feature": "ct_street",
+      "composite_score": 0.2079,
+      "spearman_norm": 0.0292,
+      "mi_norm": 1.0,
+      "rf_mdi_norm": 0.0032,
+      "perm_norm": 0.0074,
+      "gb_norm": 0.006,
+      "coverage_pct": 100.0
+    },
+    {
+      "rank": 3,
+      "feature": "grid_position_pct",
+      "composite_score": 0.1517,
+      "spearman_norm": 1.0,
+      "mi_norm": 0.0,
+      "rf_mdi_norm": 0.0026,
+      "perm_norm": 0.0017,
+      "gb_norm": 0.0045,
+      "coverage_pct": 100.0
+    },
+    {
+      "rank": 4,
+      "feature": "round",
+      "composite_score": 0.099,
+      "spearman_norm": 0.1667,
+      "mi_norm": 0.0,
+      "rf_mdi_norm": 0.0817,
+      "perm_norm": 0.1804,
+      "gb_norm": 0.0565,
+      "coverage_pct": 100.0
+    },
+    {
+      "rank": 5,
+      "feature": "year",
+      "composite_score": 0.0792,
+      "spearman_norm": 0.1875,
+      "mi_norm": 0.0,
+      "rf_mdi_norm": 0.0654,
+      "perm_norm": 0.1118,
+      "gb_norm": 0.0453,
+      "coverage_pct": 100.0
+    },
+    {
+      "rank": 6,
+      "feature": "ct_mixed",
+      "composite_score": 0.0272,
+      "spearman_norm": 0.1458,
+      "mi_norm": 0.0,
+      "rf_mdi_norm": 0.0049,
+      "perm_norm": 0.0114,
+      "gb_norm": 0.0085,
+      "coverage_pct": 100.0
+    },
+    {
+      "rank": 7,
+      "feature": "avg_fast_corner_kmh",
+      "composite_score": 0.0251,
+      "spearman_norm": 0.0792,
+      "mi_norm": 0.0,
+      "rf_mdi_norm": 0.0194,
+      "perm_norm": 0.0557,
+      "gb_norm": 0.0097,
+      "coverage_pct": 78.1
+    },
+    {
+      "rank": 8,
+      "feature": "full_throttle_pct",
+      "composite_score": 0.0223,
+      "spearman_norm": 0.0833,
+      "mi_norm": 0.0,
+      "rf_mdi_norm": 0.0187,
+      "perm_norm": 0.0385,
+      "gb_norm": 0.012,
+      "coverage_pct": 78.1
+    },
+    {
+      "rank": 9,
+      "feature": "avg_slow_corner_kmh",
+      "composite_score": 0.0214,
+      "spearman_norm": 0.0667,
+      "mi_norm": 0.0,
+      "rf_mdi_norm": 0.0175,
+      "perm_norm": 0.0436,
+      "gb_norm": 0.0144,
+      "coverage_pct": 78.1
+    },
+    {
+      "rank": 10,
+      "feature": "min_speed_kmh",
+      "composite_score": 0.0213,
+      "spearman_norm": 0.0708,
+      "mi_norm": 0.0,
+      "rf_mdi_norm": 0.0154,
+      "perm_norm": 0.0424,
+      "gb_norm": 0.015,
+      "coverage_pct": 78.1
+    },
+    {
+      "rank": 11,
+      "feature": "top_speed_kmh",
+      "composite_score": 0.0205,
+      "spearman_norm": 0.0292,
+      "mi_norm": 0.0,
+      "rf_mdi_norm": 0.0236,
+      "perm_norm": 0.0459,
+      "gb_norm": 0.03,
+      "coverage_pct": 78.1
+    },
+    {
+      "rank": 12,
+      "feature": "ct_desert",
+      "composite_score": 0.0188,
+      "spearman_norm": 0.1167,
+      "mi_norm": 0.0,
+      "rf_mdi_norm": 0.0015,
+      "perm_norm": 0.0021,
+      "gb_norm": 0.0029,
+      "coverage_pct": 100.0
+    },
+    {
+      "rank": 13,
+      "feature": "avg_medium_corner_kmh",
+      "composite_score": 0.018,
+      "spearman_norm": 0.0625,
+      "mi_norm": 0.0,
+      "rf_mdi_norm": 0.0149,
+      "perm_norm": 0.0296,
+      "gb_norm": 0.0171,
+      "coverage_pct": 78.1
+    },
+    {
+      "rank": 14,
+      "feature": "avg_speed_kmh",
+      "composite_score": 0.0144,
+      "spearman_norm": 0.0208,
+      "mi_norm": 0.0,
+      "rf_mdi_norm": 0.0171,
+      "perm_norm": 0.0376,
+      "gb_norm": 0.0106,
+      "coverage_pct": 78.1
+    },
+    {
+      "rank": 15,
+      "feature": "ct_high_speed",
+      "composite_score": 0.0127,
+      "spearman_norm": 0.0625,
+      "mi_norm": 0.0,
+      "rf_mdi_norm": 0.0041,
+      "perm_norm": 0.0065,
+      "gb_norm": 0.0041,
+      "coverage_pct": 100.0
+    },
+    {
+      "rank": 16,
+      "feature": "grid_position",
+      "composite_score": 0.0125,
+      "spearman_norm": 0.0,
+      "mi_norm": 0.0627,
+      "rf_mdi_norm": 0.0,
+      "perm_norm": 0.0,
+      "gb_norm": 0.0,
+      "coverage_pct": 100.0
+    }
+  ],
+  "spearman": [
+    {
+      "feature": "grid_position_pct",
+      "spearman_rho": 0.024,
+      "p_value": 0.180688,
+      "n_obs": 3104,
+      "significant": false
+    },
+    {
+      "feature": "pace_delta_ms",
+      "spearman_rho": 0.0164,
+      "p_value": 0.366742,
+      "n_obs": 3036,
+      "significant": false
+    },
+    {
+      "feature": "year",
+      "spearman_rho": 0.0045,
+      "p_value": 0.800674,
+      "n_obs": 3104,
+      "significant": false
+    },
+    {
+      "feature": "round",
+      "spearman_rho": -0.004,
+      "p_value": 0.821792,
+      "n_obs": 3104,
+      "significant": false
+    },
+    {
+      "feature": "ct_mixed",
+      "spearman_rho": -0.0035,
+      "p_value": 0.844739,
+      "n_obs": 3104,
+      "significant": false
+    },
+    {
+      "feature": "ct_desert",
+      "spearman_rho": 0.0028,
+      "p_value": 0.877821,
+      "n_obs": 3104,
+      "significant": false
+    },
+    {
+      "feature": "full_throttle_pct",
+      "spearman_rho": -0.002,
+      "p_value": 0.92272,
+      "n_obs": 2424,
+      "significant": false
+    },
+    {
+      "feature": "avg_fast_corner_kmh",
+      "spearman_rho": -0.0019,
+      "p_value": 0.925086,
+      "n_obs": 2424,
+      "significant": false
+    },
+    {
+      "feature": "min_speed_kmh",
+      "spearman_rho": -0.0017,
+      "p_value": 0.931614,
+      "n_obs": 2424,
+      "significant": false
+    },
+    {
+      "feature": "avg_slow_corner_kmh",
+      "spearman_rho": -0.0016,
+      "p_value": 0.938771,
+      "n_obs": 2424,
+      "significant": false
+    },
+    {
+      "feature": "ct_high_speed",
+      "spearman_rho": 0.0015,
+      "p_value": 0.931939,
+      "n_obs": 3104,
+      "significant": false
+    },
+    {
+      "feature": "avg_medium_corner_kmh",
+      "spearman_rho": -0.0015,
+      "p_value": 0.939694,
+      "n_obs": 2424,
+      "significant": false
+    },
+    {
+      "feature": "top_speed_kmh",
+      "spearman_rho": -0.0007,
+      "p_value": 0.973966,
+      "n_obs": 2424,
+      "significant": false
+    },
+    {
+      "feature": "ct_street",
+      "spearman_rho": 0.0007,
+      "p_value": 0.966723,
+      "n_obs": 3104,
+      "significant": false
+    },
+    {
+      "feature": "avg_speed_kmh",
+      "spearman_rho": -0.0005,
+      "p_value": 0.981752,
+      "n_obs": 2424,
+      "significant": false
+    }
+  ],
+  "mutual_information": [
+    {
+      "feature": "ct_street",
+      "mi_score": 0.0338
+    },
+    {
+      "feature": "grid_position",
+      "mi_score": 0.00212
+    },
+    {
+      "feature": "grid_position_pct",
+      "mi_score": 0.0
+    },
+    {
+      "feature": "year",
+      "mi_score": 0.0
+    },
+    {
+      "feature": "round",
+      "mi_score": 0.0
+    },
+    {
+      "feature": "pace_delta_ms",
+      "mi_score": 0.0
+    },
+    {
+      "feature": "top_speed_kmh",
+      "mi_score": 0.0
+    },
+    {
+      "feature": "full_throttle_pct",
+      "mi_score": 0.0
+    },
+    {
+      "feature": "avg_speed_kmh",
+      "mi_score": 0.0
+    },
+    {
+      "feature": "ct_high_speed",
+      "mi_score": 0.0
+    },
+    {
+      "feature": "ct_mixed",
+      "mi_score": 0.0
+    },
+    {
+      "feature": "avg_fast_corner_kmh",
+      "mi_score": 0.0
+    },
+    {
+      "feature": "avg_medium_corner_kmh",
+      "mi_score": 0.0
+    },
+    {
+      "feature": "avg_slow_corner_kmh",
+      "mi_score": 0.0
+    },
+    {
+      "feature": "min_speed_kmh",
+      "mi_score": 0.0
+    },
+    {
+      "feature": "ct_desert",
+      "mi_score": 0.0
+    }
+  ],
+  "rf_mdi": [
+    {
+      "feature": "pace_delta_ms",
+      "rf_mdi_importance": 0.775179
+    },
+    {
+      "feature": "round",
+      "rf_mdi_importance": 0.063358
+    },
+    {
+      "feature": "year",
+      "rf_mdi_importance": 0.05069
+    },
+    {
+      "feature": "top_speed_kmh",
+      "rf_mdi_importance": 0.018311
+    },
+    {
+      "feature": "avg_fast_corner_kmh",
+      "rf_mdi_importance": 0.015006
+    },
+    {
+      "feature": "full_throttle_pct",
+      "rf_mdi_importance": 0.014482
+    },
+    {
+      "feature": "avg_slow_corner_kmh",
+      "rf_mdi_importance": 0.01356
+    },
+    {
+      "feature": "avg_speed_kmh",
+      "rf_mdi_importance": 0.013273
+    },
+    {
+      "feature": "min_speed_kmh",
+      "rf_mdi_importance": 0.011943
+    },
+    {
+      "feature": "avg_medium_corner_kmh",
+      "rf_mdi_importance": 0.011579
+    },
+    {
+      "feature": "ct_mixed",
+      "rf_mdi_importance": 0.003787
+    },
+    {
+      "feature": "ct_high_speed",
+      "rf_mdi_importance": 0.00321
+    },
+    {
+      "feature": "ct_street",
+      "rf_mdi_importance": 0.002488
+    },
+    {
+      "feature": "grid_position_pct",
+      "rf_mdi_importance": 0.001992
+    },
+    {
+      "feature": "ct_desert",
+      "rf_mdi_importance": 0.00114
+    },
+    {
+      "feature": "grid_position",
+      "rf_mdi_importance": 0.0
+    }
+  ],
+  "permutation": [
+    {
+      "feature": "pace_delta_ms",
+      "perm_importance_mean": 0.138587,
+      "perm_importance_std": 0.005855
+    },
+    {
+      "feature": "round",
+      "perm_importance_mean": 0.025005,
+      "perm_importance_std": 0.00179
+    },
+    {
+      "feature": "year",
+      "perm_importance_mean": 0.015499,
+      "perm_importance_std": 0.000524
+    },
+    {
+      "feature": "avg_fast_corner_kmh",
+      "perm_importance_mean": 0.007714,
+      "perm_importance_std": 0.000427
+    },
+    {
+      "feature": "top_speed_kmh",
+      "perm_importance_mean": 0.006367,
+      "perm_importance_std": 0.000524
+    },
+    {
+      "feature": "avg_slow_corner_kmh",
+      "perm_importance_mean": 0.006046,
+      "perm_importance_std": 0.000372
+    },
+    {
+      "feature": "min_speed_kmh",
+      "perm_importance_mean": 0.005875,
+      "perm_importance_std": 0.000281
+    },
+    {
+      "feature": "full_throttle_pct",
+      "perm_importance_mean": 0.005338,
+      "perm_importance_std": 0.000467
+    },
+    {
+      "feature": "avg_speed_kmh",
+      "perm_importance_mean": 0.005213,
+      "perm_importance_std": 0.000376
+    },
+    {
+      "feature": "avg_medium_corner_kmh",
+      "perm_importance_mean": 0.004098,
+      "perm_importance_std": 0.000421
+    },
+    {
+      "feature": "ct_mixed",
+      "perm_importance_mean": 0.001583,
+      "perm_importance_std": 0.000173
+    },
+    {
+      "feature": "ct_street",
+      "perm_importance_mean": 0.001028,
+      "perm_importance_std": 0.000137
+    },
+    {
+      "feature": "ct_high_speed",
+      "perm_importance_mean": 0.0009,
+      "perm_importance_std": 0.000141
+    },
+    {
+      "feature": "ct_desert",
+      "perm_importance_mean": 0.000293,
+      "perm_importance_std": 6.9e-05
+    },
+    {
+      "feature": "grid_position_pct",
+      "perm_importance_mean": 0.000238,
+      "perm_importance_std": 0.000138
+    },
+    {
+      "feature": "grid_position",
+      "perm_importance_mean": -0.0,
+      "perm_importance_std": 0.0
+    }
+  ],
+  "gradient_boosting": [
+    {
+      "feature": "pace_delta_ms",
+      "gb_importance": 0.808694
+    },
+    {
+      "feature": "round",
+      "gb_importance": 0.045658
+    },
+    {
+      "feature": "year",
+      "gb_importance": 0.036633
+    },
+    {
+      "feature": "top_speed_kmh",
+      "gb_importance": 0.024234
+    },
+    {
+      "feature": "avg_medium_corner_kmh",
+      "gb_importance": 0.013858
+    },
+    {
+      "feature": "min_speed_kmh",
+      "gb_importance": 0.012132
+    },
+    {
+      "feature": "avg_slow_corner_kmh",
+      "gb_importance": 0.011663
+    },
+    {
+      "feature": "full_throttle_pct",
+      "gb_importance": 0.009674
+    },
+    {
+      "feature": "avg_speed_kmh",
+      "gb_importance": 0.008577
+    },
+    {
+      "feature": "avg_fast_corner_kmh",
+      "gb_importance": 0.007875
+    },
+    {
+      "feature": "ct_mixed",
+      "gb_importance": 0.006839
+    },
+    {
+      "feature": "ct_street",
+      "gb_importance": 0.004845
+    },
+    {
+      "feature": "grid_position_pct",
+      "gb_importance": 0.003633
+    },
+    {
+      "feature": "ct_high_speed",
+      "gb_importance": 0.003353
+    },
+    {
+      "feature": "ct_desert",
+      "gb_importance": 0.002332
+    },
+    {
+      "feature": "grid_position",
+      "gb_importance": 0.0
+    }
+  ],
+  "coverage": [
+    {
+      "feature": "grid_position",
+      "coverage_pct": 100.0,
+      "n_valid": 3104
+    },
+    {
+      "feature": "grid_position_pct",
+      "coverage_pct": 100.0,
+      "n_valid": 3104
+    },
+    {
+      "feature": "year",
+      "coverage_pct": 100.0,
+      "n_valid": 3104
+    },
+    {
+      "feature": "round",
+      "coverage_pct": 100.0,
+      "n_valid": 3104
+    },
+    {
+      "feature": "ct_street",
+      "coverage_pct": 100.0,
+      "n_valid": 3104
+    },
+    {
+      "feature": "ct_high_speed",
+      "coverage_pct": 100.0,
+      "n_valid": 3104
+    },
+    {
+      "feature": "ct_mixed",
+      "coverage_pct": 100.0,
+      "n_valid": 3104
+    },
+    {
+      "feature": "ct_desert",
+      "coverage_pct": 100.0,
+      "n_valid": 3104
+    },
+    {
+      "feature": "pace_delta_ms",
+      "coverage_pct": 97.8,
+      "n_valid": 3036
+    },
+    {
+      "feature": "top_speed_kmh",
+      "coverage_pct": 78.1,
+      "n_valid": 2424
+    },
+    {
+      "feature": "full_throttle_pct",
+      "coverage_pct": 78.1,
+      "n_valid": 2424
+    },
+    {
+      "feature": "avg_speed_kmh",
+      "coverage_pct": 78.1,
+      "n_valid": 2424
+    },
+    {
+      "feature": "avg_fast_corner_kmh",
+      "coverage_pct": 78.1,
+      "n_valid": 2424
+    },
+    {
+      "feature": "avg_medium_corner_kmh",
+      "coverage_pct": 78.1,
+      "n_valid": 2424
+    },
+    {
+      "feature": "avg_slow_corner_kmh",
+      "coverage_pct": 78.1,
+      "n_valid": 2424
+    },
+    {
+      "feature": "min_speed_kmh",
+      "coverage_pct": 78.1,
+      "n_valid": 2424
+    }
+  ],
+  "full_rankings": [
+    {
+      "rank": 1,
+      "feature": "pace_delta_ms",
+      "composite_score": 0.7359,
+      "spearman_norm": 0.6833,
+      "mi_norm": 0.0,
+      "rf_mdi_norm": 1.0,
+      "perm_norm": 1.0,
+      "gb_norm": 1.0,
+      "coverage_pct": 97.8
+    },
+    {
+      "rank": 2,
+      "feature": "ct_street",
+      "composite_score": 0.2079,
+      "spearman_norm": 0.0292,
+      "mi_norm": 1.0,
+      "rf_mdi_norm": 0.0032,
+      "perm_norm": 0.0074,
+      "gb_norm": 0.006,
+      "coverage_pct": 100.0
+    },
+    {
+      "rank": 3,
+      "feature": "grid_position_pct",
+      "composite_score": 0.1517,
+      "spearman_norm": 1.0,
+      "mi_norm": 0.0,
+      "rf_mdi_norm": 0.0026,
+      "perm_norm": 0.0017,
+      "gb_norm": 0.0045,
+      "coverage_pct": 100.0
+    },
+    {
+      "rank": 4,
+      "feature": "round",
+      "composite_score": 0.099,
+      "spearman_norm": 0.1667,
+      "mi_norm": 0.0,
+      "rf_mdi_norm": 0.0817,
+      "perm_norm": 0.1804,
+      "gb_norm": 0.0565,
+      "coverage_pct": 100.0
+    },
+    {
+      "rank": 5,
+      "feature": "year",
+      "composite_score": 0.0792,
+      "spearman_norm": 0.1875,
+      "mi_norm": 0.0,
+      "rf_mdi_norm": 0.0654,
+      "perm_norm": 0.1118,
+      "gb_norm": 0.0453,
+      "coverage_pct": 100.0
+    },
+    {
+      "rank": 6,
+      "feature": "ct_mixed",
+      "composite_score": 0.0272,
+      "spearman_norm": 0.1458,
+      "mi_norm": 0.0,
+      "rf_mdi_norm": 0.0049,
+      "perm_norm": 0.0114,
+      "gb_norm": 0.0085,
+      "coverage_pct": 100.0
+    },
+    {
+      "rank": 7,
+      "feature": "avg_fast_corner_kmh",
+      "composite_score": 0.0251,
+      "spearman_norm": 0.0792,
+      "mi_norm": 0.0,
+      "rf_mdi_norm": 0.0194,
+      "perm_norm": 0.0557,
+      "gb_norm": 0.0097,
+      "coverage_pct": 78.1
+    },
+    {
+      "rank": 8,
+      "feature": "full_throttle_pct",
+      "composite_score": 0.0223,
+      "spearman_norm": 0.0833,
+      "mi_norm": 0.0,
+      "rf_mdi_norm": 0.0187,
+      "perm_norm": 0.0385,
+      "gb_norm": 0.012,
+      "coverage_pct": 78.1
+    },
+    {
+      "rank": 9,
+      "feature": "avg_slow_corner_kmh",
+      "composite_score": 0.0214,
+      "spearman_norm": 0.0667,
+      "mi_norm": 0.0,
+      "rf_mdi_norm": 0.0175,
+      "perm_norm": 0.0436,
+      "gb_norm": 0.0144,
+      "coverage_pct": 78.1
+    },
+    {
+      "rank": 10,
+      "feature": "min_speed_kmh",
+      "composite_score": 0.0213,
+      "spearman_norm": 0.0708,
+      "mi_norm": 0.0,
+      "rf_mdi_norm": 0.0154,
+      "perm_norm": 0.0424,
+      "gb_norm": 0.015,
+      "coverage_pct": 78.1
+    },
+    {
+      "rank": 11,
+      "feature": "top_speed_kmh",
+      "composite_score": 0.0205,
+      "spearman_norm": 0.0292,
+      "mi_norm": 0.0,
+      "rf_mdi_norm": 0.0236,
+      "perm_norm": 0.0459,
+      "gb_norm": 0.03,
+      "coverage_pct": 78.1
+    },
+    {
+      "rank": 12,
+      "feature": "ct_desert",
+      "composite_score": 0.0188,
+      "spearman_norm": 0.1167,
+      "mi_norm": 0.0,
+      "rf_mdi_norm": 0.0015,
+      "perm_norm": 0.0021,
+      "gb_norm": 0.0029,
+      "coverage_pct": 100.0
+    },
+    {
+      "rank": 13,
+      "feature": "avg_medium_corner_kmh",
+      "composite_score": 0.018,
+      "spearman_norm": 0.0625,
+      "mi_norm": 0.0,
+      "rf_mdi_norm": 0.0149,
+      "perm_norm": 0.0296,
+      "gb_norm": 0.0171,
+      "coverage_pct": 78.1
+    },
+    {
+      "rank": 14,
+      "feature": "avg_speed_kmh",
+      "composite_score": 0.0144,
+      "spearman_norm": 0.0208,
+      "mi_norm": 0.0,
+      "rf_mdi_norm": 0.0171,
+      "perm_norm": 0.0376,
+      "gb_norm": 0.0106,
+      "coverage_pct": 78.1
+    },
+    {
+      "rank": 15,
+      "feature": "ct_high_speed",
+      "composite_score": 0.0127,
+      "spearman_norm": 0.0625,
+      "mi_norm": 0.0,
+      "rf_mdi_norm": 0.0041,
+      "perm_norm": 0.0065,
+      "gb_norm": 0.0041,
+      "coverage_pct": 100.0
+    },
+    {
+      "rank": 16,
+      "feature": "grid_position",
+      "composite_score": 0.0125,
+      "spearman_norm": 0.0,
+      "mi_norm": 0.0627,
+      "rf_mdi_norm": 0.0,
+      "perm_norm": 0.0,
+      "gb_norm": 0.0,
+      "coverage_pct": 100.0
+    }
+  ]
+}

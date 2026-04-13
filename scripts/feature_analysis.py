@@ -115,6 +115,10 @@ def extract_race_results(db, min_year: int, max_year: int) -> pd.DataFrame:
             status = res.get("status", "Unknown")
             constructor_ref = res.get("constructor_ref", "unknown")
 
+            # Fallback: use qualifying position if grid_position missing from race result
+            if not grid_pos and driver_code in qual_lookup:
+                grid_pos = qual_lookup[driver_code]
+
             is_dnf = 1 if finish_pos is None else 0
             finish_pos_filled = finish_pos if finish_pos is not None else 21
             pos_gain = grid_pos - finish_pos_filled if grid_pos > 0 else None
