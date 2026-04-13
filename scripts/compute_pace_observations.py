@@ -70,34 +70,35 @@ def compute_pace_observations(db, years: List[int], source: str = None) -> int:
         pipeline[0]["$match"] = match_stage
     
     results = list(db.f1_lap_times.aggregate(pipeline))
-    
+
     if not results:
         print("[WARNING] No valid lap data found")
         return 0
-    
-    df = pd.DataFrame(results)
-    
+
+    # json_normalize flattens nested _id dict → columns: _id.year, _id.round, _id.circuit_ref, _id.team
+    df = pd.json_normalize(results)
+
     constructor_medians = df.groupby(["_id.year", "_id.team"])["avg_pace"].median()
-    
+
     operations = []
     computed = 0
-    
+
     for _, row in df.iterrows():
-        year = row["_id"]["year"]
-        team = row["_id"]["team"]
-        
+        year = int(row["_id.year"])
+        team = row["_id.team"]
+
         team_median = constructor_medians.get((year, team), row["avg_pace"])
-        
+
         if team_median > 0:
             pace_delta = (row["avg_pace"] - team_median) / 1000
         else:
             pace_delta = 0.0
-        
+
         doc = {
-            "_id": f"{year}_{row['_id']['round']:02d}_{team}",
+            "_id": f"{year}_{int(row['_id.round']):02d}_{team}",
             "year": year,
-            "round": row["_id"]["round"],
-            "circuit_ref": row["_id"]["circuit_ref"],
+            "round": int(row["_id.round"]),
+            "circuit_ref": row["_id.circuit_ref"],
             "constructor_ref": team,
             "pace_delta_ms": pace_delta,
             "avg_pace_ms": row["avg_pace"],
