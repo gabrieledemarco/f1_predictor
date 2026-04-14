@@ -1,0 +1,31 @@
+{
+  "optimal_features": [
+    "lap_time_delta_pct",
+    "best_lap_delta_pct",
+    "s1_delta_ms",
+    "s2_delta_ms",
+    "s3_delta_ms",
+    "total_sector_delta_ms",
+    "s1_best_ms",
+    "s2_best_ms",
+    "s3_best_ms",
+    "total_best_ms",
+    "lap_consistency",
+    "avg_lap_ms",
+    "std_lap_ms",
+    "pace_delta_ms"
+  ],
+  "leaky_features_removed": [
+    "finish_position",
+    "grid_position",
+    "points_scored",
+    "laps_completed",
+    "is_dnf",
+    "status_finished",
+    "total_valid_laps",
+    "grid_position_pct",
+    "pos_gain",
+    "top3_finish"
+  ],
+  "best_mae": 1.785857473234503
+}
