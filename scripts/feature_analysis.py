@@ -310,50 +310,81 @@ def extract_odds_features(db, min_year: int, max_year: int) -> pd.DataFrame:
 
 def extract_session_stats(db, min_year: int, max_year: int) -> pd.DataFrame:
     """
-    Estrae feature da session_stats_YYYY (qualifying/practice stats).
-    Feature: best_sector_times, q3_time_ms, etc.
+    Estrae feature da f1_session_stats (sector times from TracingInsights).
+    Feature: best_sector_times (s1, s2, s3), total_best_ms.
     """
-    log.info("Extracting session stats …")
-    coll_names = db.list_collection_names()
-    stats_colls = [n for n in coll_names if n.startswith("session_stats_")]
-
-    rows = []
-    for coll_name in sorted(stats_colls):
-        try:
-            year = int(coll_name.replace("session_stats_", ""))
-        except ValueError:
-            continue
-        if not (min_year <= year <= max_year):
-            continue
-
-        coll = db[coll_name]
-        docs = list(coll.find(
-            {"session_name": {"$in": ["Q", "Qualifying"]}},
-            {"year": 1, "round_num": 1, "driver": 1,
-             "best_lap_ms": 1, "s1_best_ms": 1, "s2_best_ms": 1, "s3_best_ms": 1,
-             "lap_count": 1, "_id": 0}
-        ))
-        for d in docs:
-            d["year"] = d.get("year", year)
-            d["round"] = d.get("round_num", d.get("round", 0))
-            d["driver_code"] = d.get("driver", d.get("driver_code", ""))
-            rows.append(d)
-
-    if not rows:
-        log.warning("  No session_stats collections found — qualifying telemetry missing")
+    log.info("Extracting session stats from f1_session_stats …")
+    
+    # Mapping from TracingInsights circuit names to f1_races circuit_ref
+    TRACING_TO_RACES = {
+        "abu_dhabi": "yas_marina",
+        "australian": "albert_park",
+        "austrian": "red_bull_ring",
+        "azerbaijan": "baku",
+        "british": "silverstone",
+        "canadian": "villeneuve",
+        "chinese": "shanghai",
+        "dutch": "zandvoort",
+        "emilia_romagna": "imola",
+        "french": "catalunya",
+        "hungarian": "hungaroring",
+        "italian": "monza",
+        "japanese": "suzuka",
+        "las_vegas": "vegas",
+        "mexico_city": "rodriguez",
+        "qatar": "losail",
+        "saudi_arabian": "jeddah",
+        "singapore": "marina_bay",
+        "spanish": "catalunya",
+        "são_paulo": "interlagos",
+        "united_states": "americas",
+    }
+    
+    coll = db["f1_session_stats"]
+    docs = list(coll.find(
+        {"year": {"$gte": min_year, "$lte": max_year}},
+        {"year": 1, "circuit_ref": 1, "driver_code": 1,
+         "s1_best_ms": 1, "s2_best_ms": 1, "s3_best_ms": 1, "total_best_ms": 1,
+         "session_type": 1, "_id": 0}
+    ))
+    
+    if not docs:
+        log.warning("  f1_session_stats is empty — sector time features will be missing")
         return pd.DataFrame(columns=["year", "round", "driver_code"])
-
-    df = pd.DataFrame(rows)
+    
+    df = pd.DataFrame(docs)
+    
+    # Filter to qualifying sessions only
+    df = df[df.get("session_type", pd.Series([""] * len(df))) == "qualifying"]
+    
+    # Map TracingInsights circuit names to f1_races circuit_ref
+    df["circuit_ref"] = df["circuit_ref"].map(TRACING_TO_RACES).fillna(df["circuit_ref"])
+    
+    # Get year -> round mapping from f1_races
+    race_coll = db["f1_races"]
+    race_docs = list(race_coll.find(
+        {"year": {"$gte": min_year, "$lte": max_year}},
+        {"year": 1, "round": 1, "circuit_ref": 1}
+    ))
+    year_round_map = {(r["year"], r["circuit_ref"]): r["round"] for r in race_docs}
+    
+    # Map circuit_ref -> round
+    df["round"] = df.apply(lambda row: year_round_map.get((row.get("year", 0), row.get("circuit_ref", "")), 0), axis=1)
+    
+    # Convert numeric columns
+    for col in ["s1_best_ms", "s2_best_ms", "s3_best_ms", "total_best_ms"]:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors="coerce")
+    
+    # Keep only relevant columns
     cols_to_keep = ["year", "round", "driver_code"]
-    for col in ["best_lap_ms", "s1_best_ms", "s2_best_ms", "s3_best_ms", "lap_count"]:
+    for col in ["s1_best_ms", "s2_best_ms", "s3_best_ms", "total_best_ms"]:
         if col in df.columns:
             cols_to_keep.append(col)
-            df[col] = pd.to_numeric(df[col], errors="coerce")
-
-    df = df[cols_to_keep].copy()
-    agg = df.groupby(["year", "round", "driver_code"]).first().reset_index()
-    log.info(f"  → {len(agg)} qualifying session records")
-    return agg
+    
+    df = df[cols_to_keep].dropna(subset=["round"]).drop_duplicates(subset=["year", "round", "driver_code"])
+    log.info(f"  → {len(df)} qualifying session records with sector times")
+    return df
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -395,6 +426,18 @@ def build_feature_matrix(
     # 5. Join session stats (by year, round, driver_code)
     if len(df_session) > 0:
         df = df.merge(df_session, on=["year", "round", "driver_code"], how="left")
+        
+        # Create sector time delta features (vs race median)
+        for sector in ["s1", "s2", "s3"]:
+            col = f"{sector}_best_ms"
+            if col in df.columns:
+                race_median = df.groupby(["year", "round"])[col].transform("median")
+                df[f"{sector}_delta_ms"] = df[col] - race_median
+        
+        # Total best delta
+        if "total_best_ms" in df.columns:
+            race_median = df.groupby(["year", "round"])["total_best_ms"].transform("median")
+            df["total_sector_delta_ms"] = df["total_best_ms"] - race_median
 
     # ── Encode categoricals ──────────────────────────────────────────────
     # Circuit type → one-hot
@@ -448,11 +491,16 @@ NUMERIC_FEATURES = [
     # Odds
     "odds_p_novig",
     "odds_p_implied",
-    # Session stats (qualifying)
-    "best_lap_ms",
+    # Session stats (qualifying) - sector times from TracingInsights
     "s1_best_ms",
     "s2_best_ms",
     "s3_best_ms",
+    "total_best_ms",
+    # Sector time deltas (vs race median)
+    "s1_delta_ms",
+    "s2_delta_ms",
+    "s3_delta_ms",
+    "total_sector_delta_ms",
     "lap_count",
     # Circuit profiles
     "top_speed_kmh",
