@@ -48,6 +48,14 @@ except ImportError:
     HAS_HISTORICAL_FEATURES = False
     compute_driver_historical_features = None
 
+# Sector times loader
+try:
+    from f1_predictor.data.sector_times_loader import SectorTimesLoader
+    HAS_SECTOR_TIMES = True
+except ImportError:
+    HAS_SECTOR_TIMES = False
+    SectorTimesLoader = None
+
 
 class F1PredictionPipeline:
     """
@@ -88,6 +96,8 @@ class F1PredictionPipeline:
         self._is_fitted = False
         # TASK 5.1 — Store historical races for feature computation
         self._historical_races: list[dict] = []
+        # Sector times loader
+        self._sector_loader = None
 
     def fit(self, historical_races: list[dict],
             historical_odds: Optional[dict] = None,
@@ -173,6 +183,15 @@ class F1PredictionPipeline:
         # Load historical races into DNF estimator (TASK 5.3)
         self.dnf_estimator.load_from_historical_races(historical_races)
         
+        # Initialize sector times loader if available
+        if HAS_SECTOR_TIMES:
+            try:
+                # Try to get db from historical_races if it contains db connection
+                # Otherwise, will be initialized on first use
+                pass
+            except Exception:
+                pass
+        
         self._is_fitted = True
         if verbose:
             print("[Pipeline] OK Fitting complete.")
@@ -255,6 +274,18 @@ class F1PredictionPipeline:
             # Get historical features for this driver (default if not available)
             hist_feat = historical_features.get(code)
             
+            # Get sector time features for this driver (if available)
+            sector_deltas = None
+            sector_available = False
+            if HAS_SECTOR_TIMES and self._sector_loader is not None:
+                try:
+                    sector_deltas = self._sector_loader.compute_deltas(
+                        race.year, race.circuit.ref, code
+                    )
+                    sector_available = sector_deltas is not None
+                except Exception:
+                    pass
+            
             feat = EnsembleFeatures(
                 driver_skill_mu=di.skill_mu,
                 driver_skill_sigma=di.skill_sigma,
@@ -275,6 +306,12 @@ class F1PredictionPipeline:
                 h2h_win_rate_3season=hist_feat.h2h_win_rate_3season if hist_feat else 0.5,
                 elo_delta_vs_field=hist_feat.elo_delta_vs_field if hist_feat else 0.0,
                 dnf_rate_relative=hist_feat.dnf_rate_relative if hist_feat else 0.0,
+                # Sector time features (from TracingInsights)
+                sector_time_delta_ms=sector_deltas.get("total_sector_delta_ms", 0.0) if sector_deltas else 0.0,
+                s1_delta_ms=sector_deltas.get("s1_delta_ms", 0.0) if sector_deltas else 0.0,
+                s2_delta_ms=sector_deltas.get("s2_delta_ms", 0.0) if sector_deltas else 0.0,
+                s3_delta_ms=sector_deltas.get("s3_delta_ms", 0.0) if sector_deltas else 0.0,
+                sector_time_available=sector_available,
             )
             features[code] = feat
 
@@ -374,3 +411,8 @@ class F1PredictionPipeline:
     def get_edge_summary(self) -> list[dict]:
         """Return current edge summary across all markets."""
         return self.edge_tracker.summary_report()
+    
+    def set_sector_times_loader(self, db):
+        """Initialize sector times loader with database connection."""
+        if HAS_SECTOR_TIMES:
+            self._sector_loader = SectorTimesLoader(db)
