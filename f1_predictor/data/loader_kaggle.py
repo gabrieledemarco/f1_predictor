@@ -1,6 +1,15 @@
 """
 data/loader_kaggle.py
-========================
+=======================
+DEPRECATED: This loader is deprecated. Use MongoDB loaders instead.
+    - Import data via GitHub Actions workflows
+    - Load via: from f1_predictor.data import MongoPaceLoader
+
+This module is kept only for backward compatibility and will be removed
+in a future version.
+
+---
+
 Loader per dati Kaggle RaceData (formato tabellare).
 
 Legge i CSV flat dal repository TracingInsights/RaceData e produce:

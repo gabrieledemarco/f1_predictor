@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import os
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -179,32 +180,47 @@ def run_training(args) -> dict:
         suffix = f"  {extra}" if extra else ""
         log.info(f"└─ ✓ completato in {_fmt_elapsed(dur)}{diff_str}{suffix}")
 
-    # ── Connessione MongoDB (opzionale — fallback cache disco) ───────
-    try:
-        from core.db import get_db_direct
-        db = get_db_direct()
-        if db is not None:
-            log.info(f"[Pipeline] MongoDB connesso: {db.name}")
-        else:
-            log.info("[Pipeline] MongoDB non disponibile — uso cache disco")
-    except Exception:
-        db = None
+    # ── Connessione MongoDB ─────────────────────────────────────────
+    # Legge URI direttamente da env var (come in test_mongo_connection.yml)
+    mongodb_uri = os.environ.get("MONGODB_URI") or os.environ.get("MONGO_URI")
+    db = None
+    if mongodb_uri:
+        try:
+            from core.db import get_db_direct
+            db = get_db_direct(uri=mongodb_uri)
+            if db is not None:
+                log.info(f"[Pipeline] MongoDB connesso: {db.name}")
+            else:
+                log.warning("[Pipeline] MongoDB connesso ma db=None")
+        except Exception as e:
+            log.warning(f"[Pipeline] MongoDB errore: {e}")
+    else:
+        log.warning("[Pipeline] MONGODB_URI non disponibile")
 
     # ── 1. Carica dati ───────────────────────────────────────────────
     _step_start(1, f"Caricamento dati  {args.train_from}–{args.year}  R{args.through_round}")
-    try:
-        from f1_predictor.data import load_training_data
-        races = load_training_data(
-            years=range(args.train_from, args.year + 1),
-            through_round=args.through_round,
-            jolpica_cache=args.jolpica_cache,
-            tracinginsights_dir=args.tracing_dir,
-            use_synthetic_fallback=True,
-            force_refresh=False,
-            db=db,
-        )
-    except Exception as e:
-        log.warning(f"load_training_data fallito ({e}) — uso dati sintetici")
+    
+    races = None
+    
+    if db is not None:
+        try:
+            from f1_predictor.data import load_training_data
+            races = load_training_data(
+                years=range(args.train_from, args.year + 1),
+                through_round=args.through_round,
+                jolpica_cache=args.jolpica_cache,
+                tracinginsights_dir=args.tracing_dir,
+                use_synthetic_fallback=True,
+                force_refresh=False,
+                db=db,
+            )
+            log.info(f"[Pipeline] Caricate {len(races)} gare da MongoDB")
+        except Exception as e:
+            log.warning(f"[Pipeline] load_training_data fallito: {e}")
+            races = None
+
+    if not races:
+        log.warning("[Pipeline] Uso dati sintetici come fallback")
         from f1_predictor.data.adapter import generate_seasons
         races = generate_seasons(
             years=list(range(args.train_from, args.year + 1)),
@@ -259,14 +275,16 @@ def run_training(args) -> dict:
     _log_metrics(val_metrics)
 
     # ── 4. Fit finale su TUTTI i dati ────────────────────────────────
+    # Usa MC ridotto per speed: il fit è iterativo, non serve alta precisione
+    n_mc_final = min(args.n_mc_sim, 10_000)  # Max 10k per final fit
     _step_start(4, f"Fit finale su tutti i {len(races)} gare  (TTT + Kalman)")
     pipeline_final = F1PredictionPipeline(
         ttt_config=TTTConfig(),
         kalman_config=KalmanConfig(),
-        sim_config=RaceSimConfig(n_simulations=args.n_mc_sim),
+        sim_config=RaceSimConfig(n_simulations=n_mc_final),
     )
     pipeline_final.fit(races, verbose=False)
-    _step_done(4)
+    _step_done(4, f"MC={n_mc_final:,}")
 
     # ── 5. Ridge ensemble ────────────────────────────────────────────
     _step_start(5, f"Fit Ridge ensemble  (alpha={args.ridge_alpha})")

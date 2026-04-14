@@ -1,6 +1,15 @@
 """
 data/loader_tracinginsights.py
 ==============================
+DEPRECATED: This loader is deprecated. Use MongoDB loaders instead.
+    - Import data via GitHub Actions workflows
+    - Load via: from f1_predictor.data import MongoPaceLoader
+
+This module is kept only for backward compatibility and will be removed
+in a future version.
+
+---
+
 Legge i CSV lap-by-lap dal repository TracingInsights/RaceData e produce:
     1. LapData entities per il Kalman Filter (Layer 1b)
     2. constructor_pace_observations per ogni gara (input per pipeline.fit())

@@ -13,6 +13,7 @@ import os
 import sys
 import json
 import time
+import logging
 from datetime import datetime
 from typing import Dict, List, Optional
 
@@ -22,7 +23,12 @@ from dotenv import load_dotenv
 from pymongo import MongoClient, InsertOne
 from pymongo.errors import PyMongoError
 
+from rate_limiter import RateLimiter
+
 load_dotenv()
+
+logging.basicConfig(level=logging.INFO)
+log = logging.getLogger(__name__)
 
 ODDS_API_BASE = "https://api.the-odds-api.com/v4/sports/motorsport_formula_one/odds"
 DRIVER_NAME_MAPPING = {
@@ -50,6 +56,8 @@ DRIVER_NAME_MAPPING = {
     "doohan": "DOO",
     "iyama": "IYR",
 }
+
+odds_limiter = RateLimiter(requests_per_second=2.0, max_retries=5, backoff_factor=3.0)
 
 
 def get_mongo_client():
@@ -108,7 +116,7 @@ def extract_race_id(event_name: str) -> str:
 
 
 def fetch_odds(api_key: str, regions: List[str], markets: List[str]) -> List[dict]:
-    """Fetch odds from The Odds API."""
+    """Fetch odds from The Odds API with rate limiting."""
     url = ODDS_API_BASE
     params = {
         "apiKey": api_key,
@@ -118,11 +126,22 @@ def fetch_odds(api_key: str, regions: List[str], markets: List[str]) -> List[dic
     }
     
     try:
-        response = requests.get(url, params=params, timeout=30)
-        response.raise_for_status()
+        response = odds_limiter.request_with_retry("GET", url, params=params, timeout=30)
+        
+        if response.status_code == 429:
+            retry_after = int(response.headers.get("Retry-After", 60))
+            log.warning(f"Rate limited. Waiting {retry_after}s...")
+            time.sleep(retry_after)
+            return fetch_odds(api_key, regions, markets)
+        
+        if response.status_code >= 400:
+            log.error(f"API error {response.status_code} for odds API")
+            return []
+        
         return response.json()
-    except requests.exceptions.RequestException as e:
-        print(f"[ERROR] Failed to fetch odds: {e}")
+        
+    except Exception as e:
+        log.error(f"[ERROR] Failed to fetch odds: {e}")
         return []
 
 
