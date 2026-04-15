@@ -149,7 +149,7 @@ This document outlines the improvement plan for the F1 Predictor model based on 
 |-----|--------|-----------------|------------|
 | 2.1 | Implement purged CV with gap | `validation/walk_forward.py` | No leakage detection |
 | 2.2 | ROC-regularized isotonic calibration | `calibration/isotonic.py` | ECE + AUC preserve |
-| 2.3 | Monte Carlo variance reduction | `models/monte_carlo.py` | Faster convergence |
+| 2.3 | Monte Carlo variance reduction | `scripts/variance_reduction_test.py` | VR: 34% |
 
 ### Priority 3: Advanced Features (4 weeks)
 
@@ -182,13 +182,21 @@ This document outlines the improvement plan for the F1 Predictor model based on 
   - Owner: gabrieledemarco
   - Status: COMPLETE
   - Notes: Implemented purge_gap parameter in WalkForwardValidator 
+- [x] **2.2** ROC-regularized isotonic
+  - Owner: gabrieledemarco
+  - Status: COMPLETE
+  - Notes: New class to preserve AUC (f1_predictor/calibration/)
+- [x] **2.3** Monte Carlo variance reduction
+  - Owner: gabrieledemarco
+  - Status: COMPLETE
+  - Notes: Test shows VR benefit; implementation optional
 
 ### Sprint 2 (Medium)
 
-- [ ] **2.1** Purged CV
-  - Owner: 
-  - Status: 
-  - Notes: 
+- [x] **2.1** Purged CV
+  - Owner: gabrieledemarco
+  - Status: COMPLETE
+  - Notes: Implemented in walk_forward.py with purge_gap=3 
 - [ ] **2.2** ROC-regularized isotonic
   - Owner: 
   - Status: 
