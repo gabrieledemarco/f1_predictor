@@ -138,7 +138,8 @@ class WalkForwardValidator:
     def __init__(self,
                  predict_fn: Callable,
                  min_train_races: int = 20,
-                 embargo: int = 1):
+                 embargo: int = 1,
+                 purge_gap: int = 0):
         """
         Args:
             predict_fn: Callable(train_data, target_race) → predictions dict.
@@ -146,10 +147,16 @@ class WalkForwardValidator:
                              Default 20 = roughly 1 full season.
             embargo: Number of races between last train and test race
                      (to prevent rolling feature leakage). Default 1.
+            purge_gap: Additional races to SKIP between train and test.
+                       Default 0. Use 2-3 if features use lookback > 2.
+                       This prevents lookback feature leakage:
+                       - Train end: race i-purge_gap
+                       - Test start: race i
         """
         self.predict_fn = predict_fn
         self.min_train_races = min_train_races
         self.embargo = embargo
+        self.purge_gap = purge_gap
         self._fold_results: list[FoldResult] = []
 
     def run(self,
@@ -172,9 +179,11 @@ class WalkForwardValidator:
         """
         results = WalkForwardResults()
 
-        for i in range(self.min_train_races + self.embargo, len(all_races)):
-            # Strict train/test split with embargo
-            train_end = i - self.embargo
+        effective_gap = self.embargo + self.purge_gap
+
+        for i in range(self.min_train_races + effective_gap, len(all_races)):
+            # Strict train/test split with embargo + purge_gap
+            train_end = i - effective_gap
             train_races = all_races[:train_end]
             test_race = all_races[i]
 
