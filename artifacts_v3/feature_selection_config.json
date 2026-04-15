@@ -1,0 +1,52 @@
+{
+  "recommended_features": {
+    "high_importance": [
+      "lap_time_delta_pct",
+      "best_lap_delta_pct",
+      "total_sector_delta_ms",
+      "s2_delta_ms",
+      "s3_delta_ms",
+      "s1_delta_ms",
+      "pace_delta_ms",
+      "total_valid_laps"
+    ],
+    "medium_importance": [
+      "lap_consistency",
+      "avg_lap_ms",
+      "min_lap_ms",
+      "std_lap_ms",
+      "total_best_ms",
+      "s2_best_ms",
+      "s3_best_ms",
+      "s1_best_ms",
+      "grid_position",
+      "medium_pct"
+    ],
+    "total_count": 18
+  },
+  "removed_features": {
+    "zero_importance": [
+      "max_tyre_life",
+      "pb_rate",
+      "personal_bests",
+      "soft_pct",
+      "hard_pct",
+      "avg_tyre_life",
+      "year",
+      "round"
+    ],
+    "circuit_profiles": [
+      "top_speed_kmh",
+      "avg_speed_kmh",
+      "full_throttle_pct",
+      "avg_fast_corner_kmh",
+      "avg_medium_corner_kmh",
+      "avg_slow_corner_kmh",
+      "min_speed_kmh"
+    ]
+  },
+  "selection_criteria": {
+    "composite_score_threshold": 0.01,
+    "correlation_threshold": 0.9
+  }
+}

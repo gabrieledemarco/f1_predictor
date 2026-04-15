@@ -81,6 +81,15 @@ class EnsembleFeatures:
     # Market signal (informative feature, not target)
     p_pinnacle_novig: Optional[float] = None
     log_odds_pinnacle: Optional[float] = None
+    
+    # Sector time features from TracingInsights (qualifying)
+    sector_time_delta_ms: float = 0.0
+    """Delta in ms from race median (negative = faster = better)."""
+    s1_delta_ms: float = 0.0
+    s2_delta_ms: float = 0.0
+    s3_delta_ms: float = 0.0
+    sector_time_available: bool = False
+    """Whether sector time data is available for this race."""
 
     def to_array(self, include_market: bool = False) -> np.ndarray:
         """Serialise to numpy array for model input."""
@@ -108,6 +117,17 @@ class EnsembleFeatures:
                 self.p_pinnacle_novig,
                 self.log_odds_pinnacle or np.log(self.p_pinnacle_novig + 1e-8)
             ]
+        # Sector time features (only if available, otherwise 0)
+        if self.sector_time_available:
+            base += [
+                self.sector_time_delta_ms,
+                self.s1_delta_ms,
+                self.s2_delta_ms,
+                self.s3_delta_ms,
+                1.0  # flag indicating sector data is present
+            ]
+        else:
+            base += [0.0, 0.0, 0.0, 0.0, 0.0]
         return np.array(base, dtype=np.float64)
 
     @classmethod
@@ -122,6 +142,8 @@ class EnsembleFeatures:
         ]
         if include_market:
             base += ["p_pinnacle_novig", "log_odds_pinnacle"]
+        # Sector time features
+        base += ["sector_delta_ms", "s1_delta_ms", "s2_delta_ms", "s3_delta_ms", "sector_available"]
         return base
 
 

@@ -1,0 +1,1722 @@
+{
+  "generated_at": "2026-04-14T15:16:31.136329Z",
+  "config": {
+    "min_year": 2022,
+    "max_year": 2024,
+    "n_observations": 1359,
+    "n_features": 38,
+    "target": "finish_position"
+  },
+  "data_sources": {
+    "f1_races": 1359,
+    "f1_pace_observations": 779,
+    "f1_circuit_profiles": 22,
+    "f1_lap_times": 1324,
+    "odds": 0,
+    "session_stats": 1337
+  },
+  "rf_meta": {
+    "cv_mae": 1.8367,
+    "n_train": 1042
+  },
+  "top_features": [
+    {
+      "rank": 1,
+      "feature": "lap_time_delta_pct",
+      "composite_score": 0.974,
+      "spearman_norm": 1.0,
+      "mi_norm": 1.0,
+      "rf_mdi_norm": 1.0,
+      "perm_norm": 1.0,
+      "gb_norm": 1.0,
+      "coverage_pct": 97.4
+    },
+    {
+      "rank": 2,
+      "feature": "best_lap_delta_pct",
+      "composite_score": 0.3118,
+      "spearman_norm": 0.8551,
+      "mi_norm": 0.4197,
+      "rf_mdi_norm": 0.1469,
+      "perm_norm": 0.1891,
+      "gb_norm": 0.1594,
+      "coverage_pct": 97.4
+    },
+    {
+      "rank": 3,
+      "feature": "total_sector_delta_ms",
+      "composite_score": 0.1963,
+      "spearman_norm": 0.7543,
+      "mi_norm": 0.3918,
+      "rf_mdi_norm": 0.0256,
+      "perm_norm": 0.0229,
+      "gb_norm": 0.036,
+      "coverage_pct": 93.9
+    },
+    {
+      "rank": 4,
+      "feature": "s2_delta_ms",
+      "composite_score": 0.1772,
+      "spearman_norm": 0.7312,
+      "mi_norm": 0.3611,
+      "rf_mdi_norm": 0.0105,
+      "perm_norm": 0.0083,
+      "gb_norm": 0.013,
+      "coverage_pct": 94.0
+    },
+    {
+      "rank": 5,
+      "feature": "s3_delta_ms",
+      "composite_score": 0.1571,
+      "spearman_norm": 0.7081,
+      "mi_norm": 0.2609,
+      "rf_mdi_norm": 0.0126,
+      "perm_norm": 0.0129,
+      "gb_norm": 0.016,
+      "coverage_pct": 94.0
+    },
+    {
+      "rank": 6,
+      "feature": "s1_delta_ms",
+      "composite_score": 0.1465,
+      "spearman_norm": 0.6945,
+      "mi_norm": 0.2408,
+      "rf_mdi_norm": 0.0057,
+      "perm_norm": 0.0042,
+      "gb_norm": 0.0082,
+      "coverage_pct": 93.9
+    },
+    {
+      "rank": 7,
+      "feature": "pace_delta_ms",
+      "composite_score": 0.1076,
+      "spearman_norm": 0.3851,
+      "mi_norm": 0.1943,
+      "rf_mdi_norm": 0.0155,
+      "perm_norm": 0.0159,
+      "gb_norm": 0.0214,
+      "coverage_pct": 99.9
+    },
+    {
+      "rank": 8,
+      "feature": "total_valid_laps",
+      "composite_score": 0.1,
+      "spearman_norm": 0.3348,
+      "mi_norm": 0.0691,
+      "rf_mdi_norm": 0.0579,
+      "perm_norm": 0.0543,
+      "gb_norm": 0.0704,
+      "coverage_pct": 97.4
+    },
+    {
+      "rank": 9,
+      "feature": "lap_consistency",
+      "composite_score": 0.0268,
+      "spearman_norm": 0.1027,
+      "mi_norm": 0.0,
+      "rf_mdi_norm": 0.0145,
+      "perm_norm": 0.017,
+      "gb_norm": 0.0289,
+      "coverage_pct": 96.9
+    },
+    {
+      "rank": 10,
+      "feature": "avg_lap_ms",
+      "composite_score": 0.0218,
+      "spearman_norm": 0.1154,
+      "mi_norm": 0.0,
+      "rf_mdi_norm": 0.0049,
+      "perm_norm": 0.0028,
+      "gb_norm": 0.0211,
+      "coverage_pct": 97.4
+    },
+    {
+      "rank": 11,
+      "feature": "min_lap_ms",
+      "composite_score": 0.0192,
+      "spearman_norm": 0.1139,
+      "mi_norm": 0.0,
+      "rf_mdi_norm": 0.0035,
+      "perm_norm": 0.0026,
+      "gb_norm": 0.0071,
+      "coverage_pct": 97.4
+    },
+    {
+      "rank": 12,
+      "feature": "std_lap_ms",
+      "composite_score": 0.0188,
+      "spearman_norm": 0.0781,
+      "mi_norm": 0.0,
+      "rf_mdi_norm": 0.0096,
+      "perm_norm": 0.0084,
+      "gb_norm": 0.0214,
+      "coverage_pct": 96.9
+    },
+    {
+      "rank": 13,
+      "feature": "total_best_ms",
+      "composite_score": 0.015,
+      "spearman_norm": 0.0909,
+      "mi_norm": 0.0,
+      "rf_mdi_norm": 0.0025,
+      "perm_norm": 0.0018,
+      "gb_norm": 0.0084,
+      "coverage_pct": 93.9
+    },
+    {
+      "rank": 14,
+      "feature": "s2_best_ms",
+      "composite_score": 0.0143,
+      "spearman_norm": 0.0718,
+      "mi_norm": 0.0,
+      "rf_mdi_norm": 0.0063,
+      "perm_norm": 0.0045,
+      "gb_norm": 0.0118,
+      "coverage_pct": 94.0
+    },
+    {
+      "rank": 15,
+      "feature": "s3_best_ms",
+      "composite_score": 0.0139,
+      "spearman_norm": 0.0525,
+      "mi_norm": 0.0,
+      "rf_mdi_norm": 0.009,
+      "perm_norm": 0.0077,
+      "gb_norm": 0.0185,
+      "coverage_pct": 94.0
+    },
+    {
+      "rank": 16,
+      "feature": "s1_best_ms",
+      "composite_score": 0.0122,
+      "spearman_norm": 0.0567,
+      "mi_norm": 0.0,
+      "rf_mdi_norm": 0.0033,
+      "perm_norm": 0.0021,
+      "gb_norm": 0.0206,
+      "coverage_pct": 93.9
+    },
+    {
+      "rank": 17,
+      "feature": "grid_position",
+      "composite_score": 0.0072,
+      "spearman_norm": 0.0,
+      "mi_norm": 0.0362,
+      "rf_mdi_norm": 0.0,
+      "perm_norm": 0.0,
+      "gb_norm": 0.0,
+      "coverage_pct": 100.0
+    },
+    {
+      "rank": 18,
+      "feature": "medium_pct",
+      "composite_score": 0.0063,
+      "spearman_norm": 0.0,
+      "mi_norm": 0.0324,
+      "rf_mdi_norm": 0.0,
+      "perm_norm": 0.0,
+      "gb_norm": 0.0,
+      "coverage_pct": 97.4
+    },
+    {
+      "rank": 19,
+      "feature": "grid_position_pct",
+      "composite_score": 0.004,
+      "spearman_norm": 0.0127,
+      "mi_norm": 0.0105,
+      "rf_mdi_norm": 0.0,
+      "perm_norm": 0.0,
+      "gb_norm": 0.0001,
+      "coverage_pct": 100.0
+    },
+    {
+      "rank": 20,
+      "feature": "ct_mixed",
+      "composite_score": 0.0034,
+      "spearman_norm": 0.0015,
+      "mi_norm": 0.0145,
+      "rf_mdi_norm": 0.0005,
+      "perm_norm": 0.0005,
+      "gb_norm": 0.0004,
+      "coverage_pct": 100.0
+    }
+  ],
+  "spearman": [
+    {
+      "feature": "lap_time_delta_pct",
+      "spearman_rho": 0.8013,
+      "p_value": 0.0,
+      "n_obs": 1324,
+      "significant": true
+    },
+    {
+      "feature": "best_lap_delta_pct",
+      "spearman_rho": 0.6852,
+      "p_value": 0.0,
+      "n_obs": 1324,
+      "significant": true
+    },
+    {
+      "feature": "total_sector_delta_ms",
+      "spearman_rho": 0.6044,
+      "p_value": 0.0,
+      "n_obs": 1276,
+      "significant": true
+    },
+    {
+      "feature": "s2_delta_ms",
+      "spearman_rho": 0.5859,
+      "p_value": 0.0,
+      "n_obs": 1277,
+      "significant": true
+    },
+    {
+      "feature": "s3_delta_ms",
+      "spearman_rho": 0.5674,
+      "p_value": 0.0,
+      "n_obs": 1277,
+      "significant": true
+    },
+    {
+      "feature": "s1_delta_ms",
+      "spearman_rho": 0.5565,
+      "p_value": 0.0,
+      "n_obs": 1276,
+      "significant": true
+    },
+    {
+      "feature": "pace_delta_ms",
+      "spearman_rho": 0.3086,
+      "p_value": 0.0,
+      "n_obs": 1357,
+      "significant": true
+    },
+    {
+      "feature": "total_valid_laps",
+      "spearman_rho": -0.2683,
+      "p_value": 0.0,
+      "n_obs": 1324,
+      "significant": true
+    },
+    {
+      "feature": "avg_lap_ms",
+      "spearman_rho": 0.0925,
+      "p_value": 0.000747,
+      "n_obs": 1324,
+      "significant": true
+    },
+    {
+      "feature": "min_lap_ms",
+      "spearman_rho": 0.0913,
+      "p_value": 0.000876,
+      "n_obs": 1324,
+      "significant": true
+    },
+    {
+      "feature": "lap_consistency",
+      "spearman_rho": -0.0823,
+      "p_value": 0.002786,
+      "n_obs": 1317,
+      "significant": true
+    },
+    {
+      "feature": "total_best_ms",
+      "spearman_rho": 0.0728,
+      "p_value": 0.00927,
+      "n_obs": 1276,
+      "significant": true
+    },
+    {
+      "feature": "std_lap_ms",
+      "spearman_rho": -0.0626,
+      "p_value": 0.023172,
+      "n_obs": 1317,
+      "significant": true
+    },
+    {
+      "feature": "s2_best_ms",
+      "spearman_rho": 0.0575,
+      "p_value": 0.039858,
+      "n_obs": 1277,
+      "significant": true
+    },
+    {
+      "feature": "s1_best_ms",
+      "spearman_rho": 0.0454,
+      "p_value": 0.1052,
+      "n_obs": 1276,
+      "significant": false
+    },
+    {
+      "feature": "s3_best_ms",
+      "spearman_rho": 0.0421,
+      "p_value": 0.133094,
+      "n_obs": 1277,
+      "significant": false
+    },
+    {
+      "feature": "grid_position_pct",
+      "spearman_rho": 0.0102,
+      "p_value": 0.707677,
+      "n_obs": 1359,
+      "significant": false
+    },
+    {
+      "feature": "ct_street",
+      "spearman_rho": -0.0026,
+      "p_value": 0.923,
+      "n_obs": 1359,
+      "significant": false
+    },
+    {
+      "feature": "top_speed_kmh",
+      "spearman_rho": 0.0017,
+      "p_value": 0.953743,
+      "n_obs": 1139,
+      "significant": false
+    },
+    {
+      "feature": "round",
+      "spearman_rho": 0.0016,
+      "p_value": 0.951855,
+      "n_obs": 1359,
+      "significant": false
+    },
+    {
+      "feature": "avg_fast_corner_kmh",
+      "spearman_rho": 0.0016,
+      "p_value": 0.957346,
+      "n_obs": 1139,
+      "significant": false
+    },
+    {
+      "feature": "year",
+      "spearman_rho": -0.0014,
+      "p_value": 0.957627,
+      "n_obs": 1359,
+      "significant": false
+    },
+    {
+      "feature": "avg_medium_corner_kmh",
+      "spearman_rho": 0.0014,
+      "p_value": 0.963074,
+      "n_obs": 1139,
+      "significant": false
+    },
+    {
+      "feature": "ct_mixed",
+      "spearman_rho": 0.0012,
+      "p_value": 0.96436,
+      "n_obs": 1359,
+      "significant": false
+    },
+    {
+      "feature": "min_speed_kmh",
+      "spearman_rho": 0.0009,
+      "p_value": 0.974992,
+      "n_obs": 1139,
+      "significant": false
+    },
+    {
+      "feature": "avg_speed_kmh",
+      "spearman_rho": -0.0006,
+      "p_value": 0.983343,
+      "n_obs": 1139,
+      "significant": false
+    },
+    {
+      "feature": "ct_high_speed",
+      "spearman_rho": 0.0006,
+      "p_value": 0.98104,
+      "n_obs": 1359,
+      "significant": false
+    },
+    {
+      "feature": "avg_slow_corner_kmh",
+      "spearman_rho": 0.0004,
+      "p_value": 0.988115,
+      "n_obs": 1139,
+      "significant": false
+    },
+    {
+      "feature": "ct_desert",
+      "spearman_rho": 0.0004,
+      "p_value": 0.987927,
+      "n_obs": 1359,
+      "significant": false
+    },
+    {
+      "feature": "full_throttle_pct",
+      "spearman_rho": 0.0003,
+      "p_value": 0.991677,
+      "n_obs": 1139,
+      "significant": false
+    }
+  ],
+  "mutual_information": [
+    {
+      "feature": "lap_time_delta_pct",
+      "mi_score": 0.91641
+    },
+    {
+      "feature": "best_lap_delta_pct",
+      "mi_score": 0.3846
+    },
+    {
+      "feature": "total_sector_delta_ms",
+      "mi_score": 0.35903
+    },
+    {
+      "feature": "s2_delta_ms",
+      "mi_score": 0.33095
+    },
+    {
+      "feature": "s3_delta_ms",
+      "mi_score": 0.23909
+    },
+    {
+      "feature": "s1_delta_ms",
+      "mi_score": 0.2207
+    },
+    {
+      "feature": "pace_delta_ms",
+      "mi_score": 0.17809
+    },
+    {
+      "feature": "total_valid_laps",
+      "mi_score": 0.06334
+    },
+    {
+      "feature": "grid_position",
+      "mi_score": 0.03314
+    },
+    {
+      "feature": "medium_pct",
+      "mi_score": 0.02967
+    },
+    {
+      "feature": "hard_pct",
+      "mi_score": 0.01465
+    },
+    {
+      "feature": "ct_mixed",
+      "mi_score": 0.01328
+    },
+    {
+      "feature": "grid_position_pct",
+      "mi_score": 0.0096
+    },
+    {
+      "feature": "avg_tyre_life",
+      "mi_score": 0.00522
+    },
+    {
+      "feature": "ct_desert",
+      "mi_score": 0.00257
+    },
+    {
+      "feature": "year",
+      "mi_score": 0.0
+    },
+    {
+      "feature": "round",
+      "mi_score": 0.0
+    },
+    {
+      "feature": "avg_lap_ms",
+      "mi_score": 0.0
+    },
+    {
+      "feature": "min_lap_ms",
+      "mi_score": 0.0
+    },
+    {
+      "feature": "std_lap_ms",
+      "mi_score": 0.0
+    },
+    {
+      "feature": "lap_consistency",
+      "mi_score": 0.0
+    },
+    {
+      "feature": "soft_pct",
+      "mi_score": 0.0
+    },
+    {
+      "feature": "max_tyre_life",
+      "mi_score": 0.0
+    },
+    {
+      "feature": "pb_rate",
+      "mi_score": 0.0
+    },
+    {
+      "feature": "s1_best_ms",
+      "mi_score": 0.0
+    },
+    {
+      "feature": "s2_best_ms",
+      "mi_score": 0.0
+    },
+    {
+      "feature": "s3_best_ms",
+      "mi_score": 0.0
+    },
+    {
+      "feature": "total_best_ms",
+      "mi_score": 0.0
+    },
+    {
+      "feature": "top_speed_kmh",
+      "mi_score": 0.0
+    },
+    {
+      "feature": "full_throttle_pct",
+      "mi_score": 0.0
+    },
+    {
+      "feature": "avg_speed_kmh",
+      "mi_score": 0.0
+    },
+    {
+      "feature": "ct_street",
+      "mi_score": 0.0
+    },
+    {
+      "feature": "ct_high_speed",
+      "mi_score": 0.0
+    },
+    {
+      "feature": "avg_fast_corner_kmh",
+      "mi_score": 0.0
+    },
+    {
+      "feature": "avg_medium_corner_kmh",
+      "mi_score": 0.0
+    },
+    {
+      "feature": "avg_slow_corner_kmh",
+      "mi_score": 0.0
+    },
+    {
+      "feature": "min_speed_kmh",
+      "mi_score": 0.0
+    },
+    {
+      "feature": "personal_bests",
+      "mi_score": 0.0
+    }
+  ],
+  "rf_mdi": [
+    {
+      "feature": "lap_time_delta_pct",
+      "rf_mdi_importance": 0.745021
+    },
+    {
+      "feature": "best_lap_delta_pct",
+      "rf_mdi_importance": 0.109451
+    },
+    {
+      "feature": "total_valid_laps",
+      "rf_mdi_importance": 0.0431
+    },
+    {
+      "feature": "total_sector_delta_ms",
+      "rf_mdi_importance": 0.019056
+    },
+    {
+      "feature": "pace_delta_ms",
+      "rf_mdi_importance": 0.011576
+    },
+    {
+      "feature": "lap_consistency",
+      "rf_mdi_importance": 0.010826
+    },
+    {
+      "feature": "s3_delta_ms",
+      "rf_mdi_importance": 0.009401
+    },
+    {
+      "feature": "s2_delta_ms",
+      "rf_mdi_importance": 0.00779
+    },
+    {
+      "feature": "std_lap_ms",
+      "rf_mdi_importance": 0.007141
+    },
+    {
+      "feature": "s3_best_ms",
+      "rf_mdi_importance": 0.006683
+    },
+    {
+      "feature": "s2_best_ms",
+      "rf_mdi_importance": 0.004697
+    },
+    {
+      "feature": "s1_delta_ms",
+      "rf_mdi_importance": 0.004246
+    },
+    {
+      "feature": "avg_lap_ms",
+      "rf_mdi_importance": 0.003622
+    },
+    {
+      "feature": "min_lap_ms",
+      "rf_mdi_importance": 0.002614
+    },
+    {
+      "feature": "s1_best_ms",
+      "rf_mdi_importance": 0.002457
+    },
+    {
+      "feature": "round",
+      "rf_mdi_importance": 0.00245
+    },
+    {
+      "feature": "total_best_ms",
+      "rf_mdi_importance": 0.001845
+    },
+    {
+      "feature": "top_speed_kmh",
+      "rf_mdi_importance": 0.001654
+    },
+    {
+      "feature": "year",
+      "rf_mdi_importance": 0.001156
+    },
+    {
+      "feature": "avg_fast_corner_kmh",
+      "rf_mdi_importance": 0.000998
+    },
+    {
+      "feature": "full_throttle_pct",
+      "rf_mdi_importance": 0.000849
+    },
+    {
+      "feature": "avg_speed_kmh",
+      "rf_mdi_importance": 0.000764
+    },
+    {
+      "feature": "avg_slow_corner_kmh",
+      "rf_mdi_importance": 0.000604
+    },
+    {
+      "feature": "avg_medium_corner_kmh",
+      "rf_mdi_importance": 0.000597
+    },
+    {
+      "feature": "min_speed_kmh",
+      "rf_mdi_importance": 0.000537
+    },
+    {
+      "feature": "ct_mixed",
+      "rf_mdi_importance": 0.000383
+    },
+    {
+      "feature": "ct_high_speed",
+      "rf_mdi_importance": 0.000262
+    },
+    {
+      "feature": "ct_street",
+      "rf_mdi_importance": 0.00022
+    },
+    {
+      "feature": "grid_position",
+      "rf_mdi_importance": 0.0
+    },
+    {
+      "feature": "grid_position_pct",
+      "rf_mdi_importance": 0.0
+    },
+    {
+      "feature": "soft_pct",
+      "rf_mdi_importance": 0.0
+    },
+    {
+      "feature": "medium_pct",
+      "rf_mdi_importance": 0.0
+    },
+    {
+      "feature": "hard_pct",
+      "rf_mdi_importance": 0.0
+    },
+    {
+      "feature": "avg_tyre_life",
+      "rf_mdi_importance": 0.0
+    },
+    {
+      "feature": "max_tyre_life",
+      "rf_mdi_importance": 0.0
+    },
+    {
+      "feature": "pb_rate",
+      "rf_mdi_importance": 0.0
+    },
+    {
+      "feature": "personal_bests",
+      "rf_mdi_importance": 0.0
+    },
+    {
+      "feature": "ct_desert",
+      "rf_mdi_importance": 0.0
+    }
+  ],
+  "permutation": [
+    {
+      "feature": "lap_time_delta_pct",
+      "perm_importance_mean": 0.974416,
+      "perm_importance_std": 0.038681
+    },
+    {
+      "feature": "best_lap_delta_pct",
+      "perm_importance_mean": 0.184284,
+      "perm_importance_std": 0.016641
+    },
+    {
+      "feature": "total_valid_laps",
+      "perm_importance_mean": 0.052925,
+      "perm_importance_std": 0.003594
+    },
+    {
+      "feature": "total_sector_delta_ms",
+      "perm_importance_mean": 0.022341,
+      "perm_importance_std": 0.000877
+    },
+    {
+      "feature": "lap_consistency",
+      "perm_importance_mean": 0.016597,
+      "perm_importance_std": 0.00085
+    },
+    {
+      "feature": "pace_delta_ms",
+      "perm_importance_mean": 0.015501,
+      "perm_importance_std": 0.002117
+    },
+    {
+      "feature": "s3_delta_ms",
+      "perm_importance_mean": 0.012565,
+      "perm_importance_std": 0.001457
+    },
+    {
+      "feature": "std_lap_ms",
+      "perm_importance_mean": 0.008147,
+      "perm_importance_std": 0.000432
+    },
+    {
+      "feature": "s2_delta_ms",
+      "perm_importance_mean": 0.00809,
+      "perm_importance_std": 0.000875
+    },
+    {
+      "feature": "s3_best_ms",
+      "perm_importance_mean": 0.007528,
+      "perm_importance_std": 0.000387
+    },
+    {
+      "feature": "s2_best_ms",
+      "perm_importance_mean": 0.004417,
+      "perm_importance_std": 0.000215
+    },
+    {
+      "feature": "s1_delta_ms",
+      "perm_importance_mean": 0.004075,
+      "perm_importance_std": 0.000449
+    },
+    {
+      "feature": "avg_lap_ms",
+      "perm_importance_mean": 0.002756,
+      "perm_importance_std": 0.000223
+    },
+    {
+      "feature": "round",
+      "perm_importance_mean": 0.002521,
+      "perm_importance_std": 0.000105
+    },
+    {
+      "feature": "min_lap_ms",
+      "perm_importance_mean": 0.002498,
+      "perm_importance_std": 0.000169
+    },
+    {
+      "feature": "s1_best_ms",
+      "perm_importance_mean": 0.002047,
+      "perm_importance_std": 0.000146
+    },
+    {
+      "feature": "top_speed_kmh",
+      "perm_importance_mean": 0.002044,
+      "perm_importance_std": 0.000221
+    },
+    {
+      "feature": "total_best_ms",
+      "perm_importance_mean": 0.001777,
+      "perm_importance_std": 0.00017
+    },
+    {
+      "feature": "year",
+      "perm_importance_mean": 0.001309,
+      "perm_importance_std": 6.9e-05
+    },
+    {
+      "feature": "avg_fast_corner_kmh",
+      "perm_importance_mean": 0.000972,
+      "perm_importance_std": 8.4e-05
+    },
+    {
+      "feature": "full_throttle_pct",
+      "perm_importance_mean": 0.000957,
+      "perm_importance_std": 9.6e-05
+    },
+    {
+      "feature": "avg_speed_kmh",
+      "perm_importance_mean": 0.000647,
+      "perm_importance_std": 6.5e-05
+    },
+    {
+      "feature": "avg_slow_corner_kmh",
+      "perm_importance_mean": 0.000563,
+      "perm_importance_std": 4.2e-05
+    },
+    {
+      "feature": "avg_medium_corner_kmh",
+      "perm_importance_mean": 0.000534,
+      "perm_importance_std": 3e-05
+    },
+    {
+      "feature": "min_speed_kmh",
+      "perm_importance_mean": 0.000445,
+      "perm_importance_std": 3.1e-05
+    },
+    {
+      "feature": "ct_mixed",
+      "perm_importance_mean": 0.00044,
+      "perm_importance_std": 6.9e-05
+    },
+    {
+      "feature": "ct_street",
+      "perm_importance_mean": 0.000232,
+      "perm_importance_std": 4.9e-05
+    },
+    {
+      "feature": "ct_high_speed",
+      "perm_importance_mean": 0.000203,
+      "perm_importance_std": 3.1e-05
+    },
+    {
+      "feature": "grid_position",
+      "perm_importance_mean": 0.0,
+      "perm_importance_std": 0.0
+    },
+    {
+      "feature": "grid_position_pct",
+      "perm_importance_mean": 0.0,
+      "perm_importance_std": 0.0
+    },
+    {
+      "feature": "soft_pct",
+      "perm_importance_mean": 0.0,
+      "perm_importance_std": 0.0
+    },
+    {
+      "feature": "medium_pct",
+      "perm_importance_mean": 0.0,
+      "perm_importance_std": 0.0
+    },
+    {
+      "feature": "hard_pct",
+      "perm_importance_mean": 0.0,
+      "perm_importance_std": 0.0
+    },
+    {
+      "feature": "avg_tyre_life",
+      "perm_importance_mean": 0.0,
+      "perm_importance_std": 0.0
+    },
+    {
+      "feature": "max_tyre_life",
+      "perm_importance_mean": 0.0,
+      "perm_importance_std": 0.0
+    },
+    {
+      "feature": "pb_rate",
+      "perm_importance_mean": 0.0,
+      "perm_importance_std": 0.0
+    },
+    {
+      "feature": "personal_bests",
+      "perm_importance_mean": 0.0,
+      "perm_importance_std": 0.0
+    },
+    {
+      "feature": "ct_desert",
+      "perm_importance_mean": 0.0,
+      "perm_importance_std": 0.0
+    }
+  ],
+  "gradient_boosting": [
+    {
+      "feature": "lap_time_delta_pct",
+      "gb_importance": 0.675254
+    },
+    {
+      "feature": "best_lap_delta_pct",
+      "gb_importance": 0.107626
+    },
+    {
+      "feature": "total_valid_laps",
+      "gb_importance": 0.047547
+    },
+    {
+      "feature": "total_sector_delta_ms",
+      "gb_importance": 0.02433
+    },
+    {
+      "feature": "lap_consistency",
+      "gb_importance": 0.01952
+    },
+    {
+      "feature": "pace_delta_ms",
+      "gb_importance": 0.014481
+    },
+    {
+      "feature": "std_lap_ms",
+      "gb_importance": 0.014422
+    },
+    {
+      "feature": "avg_lap_ms",
+      "gb_importance": 0.014264
+    },
+    {
+      "feature": "s1_best_ms",
+      "gb_importance": 0.01392
+    },
+    {
+      "feature": "s3_best_ms",
+      "gb_importance": 0.012491
+    },
+    {
+      "feature": "s3_delta_ms",
+      "gb_importance": 0.010811
+    },
+    {
+      "feature": "s2_delta_ms",
+      "gb_importance": 0.00877
+    },
+    {
+      "feature": "s2_best_ms",
+      "gb_importance": 0.00798
+    },
+    {
+      "feature": "total_best_ms",
+      "gb_importance": 0.005704
+    },
+    {
+      "feature": "s1_delta_ms",
+      "gb_importance": 0.005522
+    },
+    {
+      "feature": "min_lap_ms",
+      "gb_importance": 0.004799
+    },
+    {
+      "feature": "round",
+      "gb_importance": 0.00319
+    },
+    {
+      "feature": "avg_speed_kmh",
+      "gb_importance": 0.001514
+    },
+    {
+      "feature": "avg_fast_corner_kmh",
+      "gb_importance": 0.00145
+    },
+    {
+      "feature": "top_speed_kmh",
+      "gb_importance": 0.001321
+    },
+    {
+      "feature": "full_throttle_pct",
+      "gb_importance": 0.001191
+    },
+    {
+      "feature": "ct_high_speed",
+      "gb_importance": 0.000983
+    },
+    {
+      "feature": "year",
+      "gb_importance": 0.000795
+    },
+    {
+      "feature": "avg_medium_corner_kmh",
+      "gb_importance": 0.000637
+    },
+    {
+      "feature": "min_speed_kmh",
+      "gb_importance": 0.000515
+    },
+    {
+      "feature": "avg_slow_corner_kmh",
+      "gb_importance": 0.000462
+    },
+    {
+      "feature": "ct_mixed",
+      "gb_importance": 0.00024
+    },
+    {
+      "feature": "ct_street",
+      "gb_importance": 0.0002
+    },
+    {
+      "feature": "grid_position_pct",
+      "gb_importance": 6.2e-05
+    },
+    {
+      "feature": "grid_position",
+      "gb_importance": 0.0
+    },
+    {
+      "feature": "soft_pct",
+      "gb_importance": 0.0
+    },
+    {
+      "feature": "medium_pct",
+      "gb_importance": 0.0
+    },
+    {
+      "feature": "hard_pct",
+      "gb_importance": 0.0
+    },
+    {
+      "feature": "avg_tyre_life",
+      "gb_importance": 0.0
+    },
+    {
+      "feature": "max_tyre_life",
+      "gb_importance": 0.0
+    },
+    {
+      "feature": "pb_rate",
+      "gb_importance": 0.0
+    },
+    {
+      "feature": "personal_bests",
+      "gb_importance": 0.0
+    },
+    {
+      "feature": "ct_desert",
+      "gb_importance": 0.0
+    }
+  ],
+  "coverage": [
+    {
+      "feature": "grid_position",
+      "coverage_pct": 100.0,
+      "n_valid": 1359
+    },
+    {
+      "feature": "grid_position_pct",
+      "coverage_pct": 100.0,
+      "n_valid": 1359
+    },
+    {
+      "feature": "year",
+      "coverage_pct": 100.0,
+      "n_valid": 1359
+    },
+    {
+      "feature": "round",
+      "coverage_pct": 100.0,
+      "n_valid": 1359
+    },
+    {
+      "feature": "ct_street",
+      "coverage_pct": 100.0,
+      "n_valid": 1359
+    },
+    {
+      "feature": "ct_high_speed",
+      "coverage_pct": 100.0,
+      "n_valid": 1359
+    },
+    {
+      "feature": "ct_mixed",
+      "coverage_pct": 100.0,
+      "n_valid": 1359
+    },
+    {
+      "feature": "ct_desert",
+      "coverage_pct": 100.0,
+      "n_valid": 1359
+    },
+    {
+      "feature": "pace_delta_ms",
+      "coverage_pct": 99.9,
+      "n_valid": 1357
+    },
+    {
+      "feature": "avg_lap_ms",
+      "coverage_pct": 97.4,
+      "n_valid": 1324
+    },
+    {
+      "feature": "min_lap_ms",
+      "coverage_pct": 97.4,
+      "n_valid": 1324
+    },
+    {
+      "feature": "lap_time_delta_pct",
+      "coverage_pct": 97.4,
+      "n_valid": 1324
+    },
+    {
+      "feature": "best_lap_delta_pct",
+      "coverage_pct": 97.4,
+      "n_valid": 1324
+    },
+    {
+      "feature": "total_valid_laps",
+      "coverage_pct": 97.4,
+      "n_valid": 1324
+    },
+    {
+      "feature": "soft_pct",
+      "coverage_pct": 97.4,
+      "n_valid": 1324
+    },
+    {
+      "feature": "medium_pct",
+      "coverage_pct": 97.4,
+      "n_valid": 1324
+    },
+    {
+      "feature": "hard_pct",
+      "coverage_pct": 97.4,
+      "n_valid": 1324
+    },
+    {
+      "feature": "avg_tyre_life",
+      "coverage_pct": 97.4,
+      "n_valid": 1324
+    },
+    {
+      "feature": "max_tyre_life",
+      "coverage_pct": 97.4,
+      "n_valid": 1324
+    },
+    {
+      "feature": "pb_rate",
+      "coverage_pct": 97.4,
+      "n_valid": 1324
+    },
+    {
+      "feature": "personal_bests",
+      "coverage_pct": 97.4,
+      "n_valid": 1324
+    },
+    {
+      "feature": "std_lap_ms",
+      "coverage_pct": 96.9,
+      "n_valid": 1317
+    },
+    {
+      "feature": "lap_consistency",
+      "coverage_pct": 96.9,
+      "n_valid": 1317
+    },
+    {
+      "feature": "s2_best_ms",
+      "coverage_pct": 94.0,
+      "n_valid": 1277
+    },
+    {
+      "feature": "s3_best_ms",
+      "coverage_pct": 94.0,
+      "n_valid": 1277
+    },
+    {
+      "feature": "s2_delta_ms",
+      "coverage_pct": 94.0,
+      "n_valid": 1277
+    },
+    {
+      "feature": "s3_delta_ms",
+      "coverage_pct": 94.0,
+      "n_valid": 1277
+    },
+    {
+      "feature": "s1_best_ms",
+      "coverage_pct": 93.9,
+      "n_valid": 1276
+    },
+    {
+      "feature": "total_best_ms",
+      "coverage_pct": 93.9,
+      "n_valid": 1276
+    },
+    {
+      "feature": "s1_delta_ms",
+      "coverage_pct": 93.9,
+      "n_valid": 1276
+    },
+    {
+      "feature": "total_sector_delta_ms",
+      "coverage_pct": 93.9,
+      "n_valid": 1276
+    },
+    {
+      "feature": "top_speed_kmh",
+      "coverage_pct": 83.8,
+      "n_valid": 1139
+    },
+    {
+      "feature": "full_throttle_pct",
+      "coverage_pct": 83.8,
+      "n_valid": 1139
+    },
+    {
+      "feature": "avg_speed_kmh",
+      "coverage_pct": 83.8,
+      "n_valid": 1139
+    },
+    {
+      "feature": "avg_fast_corner_kmh",
+      "coverage_pct": 83.8,
+      "n_valid": 1139
+    },
+    {
+      "feature": "avg_medium_corner_kmh",
+      "coverage_pct": 83.8,
+      "n_valid": 1139
+    },
+    {
+      "feature": "avg_slow_corner_kmh",
+      "coverage_pct": 83.8,
+      "n_valid": 1139
+    },
+    {
+      "feature": "min_speed_kmh",
+      "coverage_pct": 83.8,
+      "n_valid": 1139
+    }
+  ],
+  "full_rankings": [
+    {
+      "rank": 1,
+      "feature": "lap_time_delta_pct",
+      "composite_score": 0.974,
+      "spearman_norm": 1.0,
+      "mi_norm": 1.0,
+      "rf_mdi_norm": 1.0,
+      "perm_norm": 1.0,
+      "gb_norm": 1.0,
+      "coverage_pct": 97.4
+    },
+    {
+      "rank": 2,
+      "feature": "best_lap_delta_pct",
+      "composite_score": 0.3118,
+      "spearman_norm": 0.8551,
+      "mi_norm": 0.4197,
+      "rf_mdi_norm": 0.1469,
+      "perm_norm": 0.1891,
+      "gb_norm": 0.1594,
+      "coverage_pct": 97.4
+    },
+    {
+      "rank": 3,
+      "feature": "total_sector_delta_ms",
+      "composite_score": 0.1963,
+      "spearman_norm": 0.7543,
+      "mi_norm": 0.3918,
+      "rf_mdi_norm": 0.0256,
+      "perm_norm": 0.0229,
+      "gb_norm": 0.036,
+      "coverage_pct": 93.9
+    },
+    {
+      "rank": 4,
+      "feature": "s2_delta_ms",
+      "composite_score": 0.1772,
+      "spearman_norm": 0.7312,
+      "mi_norm": 0.3611,
+      "rf_mdi_norm": 0.0105,
+      "perm_norm": 0.0083,
+      "gb_norm": 0.013,
+      "coverage_pct": 94.0
+    },
+    {
+      "rank": 5,
+      "feature": "s3_delta_ms",
+      "composite_score": 0.1571,
+      "spearman_norm": 0.7081,
+      "mi_norm": 0.2609,
+      "rf_mdi_norm": 0.0126,
+      "perm_norm": 0.0129,
+      "gb_norm": 0.016,
+      "coverage_pct": 94.0
+    },
+    {
+      "rank": 6,
+      "feature": "s1_delta_ms",
+      "composite_score": 0.1465,
+      "spearman_norm": 0.6945,
+      "mi_norm": 0.2408,
+      "rf_mdi_norm": 0.0057,
+      "perm_norm": 0.0042,
+      "gb_norm": 0.0082,
+      "coverage_pct": 93.9
+    },
+    {
+      "rank": 7,
+      "feature": "pace_delta_ms",
+      "composite_score": 0.1076,
+      "spearman_norm": 0.3851,
+      "mi_norm": 0.1943,
+      "rf_mdi_norm": 0.0155,
+      "perm_norm": 0.0159,
+      "gb_norm": 0.0214,
+      "coverage_pct": 99.9
+    },
+    {
+      "rank": 8,
+      "feature": "total_valid_laps",
+      "composite_score": 0.1,
+      "spearman_norm": 0.3348,
+      "mi_norm": 0.0691,
+      "rf_mdi_norm": 0.0579,
+      "perm_norm": 0.0543,
+      "gb_norm": 0.0704,
+      "coverage_pct": 97.4
+    },
+    {
+      "rank": 9,
+      "feature": "lap_consistency",
+      "composite_score": 0.0268,
+      "spearman_norm": 0.1027,
+      "mi_norm": 0.0,
+      "rf_mdi_norm": 0.0145,
+      "perm_norm": 0.017,
+      "gb_norm": 0.0289,
+      "coverage_pct": 96.9
+    },
+    {
+      "rank": 10,
+      "feature": "avg_lap_ms",
+      "composite_score": 0.0218,
+      "spearman_norm": 0.1154,
+      "mi_norm": 0.0,
+      "rf_mdi_norm": 0.0049,
+      "perm_norm": 0.0028,
+      "gb_norm": 0.0211,
+      "coverage_pct": 97.4
+    },
+    {
+      "rank": 11,
+      "feature": "min_lap_ms",
+      "composite_score": 0.0192,
+      "spearman_norm": 0.1139,
+      "mi_norm": 0.0,
+      "rf_mdi_norm": 0.0035,
+      "perm_norm": 0.0026,
+      "gb_norm": 0.0071,
+      "coverage_pct": 97.4
+    },
+    {
+      "rank": 12,
+      "feature": "std_lap_ms",
+      "composite_score": 0.0188,
+      "spearman_norm": 0.0781,
+      "mi_norm": 0.0,
+      "rf_mdi_norm": 0.0096,
+      "perm_norm": 0.0084,
+      "gb_norm": 0.0214,
+      "coverage_pct": 96.9
+    },
+    {
+      "rank": 13,
+      "feature": "total_best_ms",
+      "composite_score": 0.015,
+      "spearman_norm": 0.0909,
+      "mi_norm": 0.0,
+      "rf_mdi_norm": 0.0025,
+      "perm_norm": 0.0018,
+      "gb_norm": 0.0084,
+      "coverage_pct": 93.9
+    },
+    {
+      "rank": 14,
+      "feature": "s2_best_ms",
+      "composite_score": 0.0143,
+      "spearman_norm": 0.0718,
+      "mi_norm": 0.0,
+      "rf_mdi_norm": 0.0063,
+      "perm_norm": 0.0045,
+      "gb_norm": 0.0118,
+      "coverage_pct": 94.0
+    },
+    {
+      "rank": 15,
+      "feature": "s3_best_ms",
+      "composite_score": 0.0139,
+      "spearman_norm": 0.0525,
+      "mi_norm": 0.0,
+      "rf_mdi_norm": 0.009,
+      "perm_norm": 0.0077,
+      "gb_norm": 0.0185,
+      "coverage_pct": 94.0
+    },
+    {
+      "rank": 16,
+      "feature": "s1_best_ms",
+      "composite_score": 0.0122,
+      "spearman_norm": 0.0567,
+      "mi_norm": 0.0,
+      "rf_mdi_norm": 0.0033,
+      "perm_norm": 0.0021,
+      "gb_norm": 0.0206,
+      "coverage_pct": 93.9
+    },
+    {
+      "rank": 17,
+      "feature": "grid_position",
+      "composite_score": 0.0072,
+      "spearman_norm": 0.0,
+      "mi_norm": 0.0362,
+      "rf_mdi_norm": 0.0,
+      "perm_norm": 0.0,
+      "gb_norm": 0.0,
+      "coverage_pct": 100.0
+    },
+    {
+      "rank": 18,
+      "feature": "medium_pct",
+      "composite_score": 0.0063,
+      "spearman_norm": 0.0,
+      "mi_norm": 0.0324,
+      "rf_mdi_norm": 0.0,
+      "perm_norm": 0.0,
+      "gb_norm": 0.0,
+      "coverage_pct": 97.4
+    },
+    {
+      "rank": 19,
+      "feature": "grid_position_pct",
+      "composite_score": 0.004,
+      "spearman_norm": 0.0127,
+      "mi_norm": 0.0105,
+      "rf_mdi_norm": 0.0,
+      "perm_norm": 0.0,
+      "gb_norm": 0.0001,
+      "coverage_pct": 100.0
+    },
+    {
+      "rank": 20,
+      "feature": "ct_mixed",
+      "composite_score": 0.0034,
+      "spearman_norm": 0.0015,
+      "mi_norm": 0.0145,
+      "rf_mdi_norm": 0.0005,
+      "perm_norm": 0.0005,
+      "gb_norm": 0.0004,
+      "coverage_pct": 100.0
+    },
+    {
+      "rank": 21,
+      "feature": "hard_pct",
+      "composite_score": 0.0031,
+      "spearman_norm": 0.0,
+      "mi_norm": 0.016,
+      "rf_mdi_norm": 0.0,
+      "perm_norm": 0.0,
+      "gb_norm": 0.0,
+      "coverage_pct": 97.4
+    },
+    {
+      "rank": 22,
+      "feature": "round",
+      "composite_score": 0.0025,
+      "spearman_norm": 0.002,
+      "mi_norm": 0.0,
+      "rf_mdi_norm": 0.0033,
+      "perm_norm": 0.0026,
+      "gb_norm": 0.0047,
+      "coverage_pct": 100.0
+    },
+    {
+      "rank": 23,
+      "feature": "top_speed_kmh",
+      "composite_score": 0.0014,
+      "spearman_norm": 0.0021,
+      "mi_norm": 0.0,
+      "rf_mdi_norm": 0.0022,
+      "perm_norm": 0.0021,
+      "gb_norm": 0.002,
+      "coverage_pct": 83.8
+    },
+    {
+      "rank": 24,
+      "feature": "year",
+      "composite_score": 0.0012,
+      "spearman_norm": 0.0017,
+      "mi_norm": 0.0,
+      "rf_mdi_norm": 0.0016,
+      "perm_norm": 0.0013,
+      "gb_norm": 0.0012,
+      "coverage_pct": 100.0
+    },
+    {
+      "rank": 25,
+      "feature": "avg_tyre_life",
+      "composite_score": 0.0011,
+      "spearman_norm": 0.0,
+      "mi_norm": 0.0057,
+      "rf_mdi_norm": 0.0,
+      "perm_norm": 0.0,
+      "gb_norm": 0.0,
+      "coverage_pct": 97.4
+    },
+    {
+      "rank": 26,
+      "feature": "avg_fast_corner_kmh",
+      "composite_score": 0.001,
+      "spearman_norm": 0.002,
+      "mi_norm": 0.0,
+      "rf_mdi_norm": 0.0013,
+      "perm_norm": 0.001,
+      "gb_norm": 0.0021,
+      "coverage_pct": 83.8
+    },
+    {
+      "rank": 27,
+      "feature": "full_throttle_pct",
+      "composite_score": 0.0007,
+      "spearman_norm": 0.0004,
+      "mi_norm": 0.0,
+      "rf_mdi_norm": 0.0011,
+      "perm_norm": 0.001,
+      "gb_norm": 0.0018,
+      "coverage_pct": 83.8
+    },
+    {
+      "rank": 28,
+      "feature": "ct_street",
+      "composite_score": 0.0007,
+      "spearman_norm": 0.0032,
+      "mi_norm": 0.0,
+      "rf_mdi_norm": 0.0003,
+      "perm_norm": 0.0002,
+      "gb_norm": 0.0003,
+      "coverage_pct": 100.0
+    },
+    {
+      "rank": 29,
+      "feature": "avg_speed_kmh",
+      "composite_score": 0.0007,
+      "spearman_norm": 0.0007,
+      "mi_norm": 0.0,
+      "rf_mdi_norm": 0.001,
+      "perm_norm": 0.0007,
+      "gb_norm": 0.0022,
+      "coverage_pct": 83.8
+    },
+    {
+      "rank": 30,
+      "feature": "avg_medium_corner_kmh",
+      "composite_score": 0.0006,
+      "spearman_norm": 0.0017,
+      "mi_norm": 0.0,
+      "rf_mdi_norm": 0.0008,
+      "perm_norm": 0.0005,
+      "gb_norm": 0.0009,
+      "coverage_pct": 83.8
+    },
+    {
+      "rank": 31,
+      "feature": "ct_desert",
+      "composite_score": 0.0006,
+      "spearman_norm": 0.0005,
+      "mi_norm": 0.0028,
+      "rf_mdi_norm": 0.0,
+      "perm_norm": 0.0,
+      "gb_norm": 0.0,
+      "coverage_pct": 100.0
+    },
+    {
+      "rank": 32,
+      "feature": "ct_high_speed",
+      "composite_score": 0.0005,
+      "spearman_norm": 0.0007,
+      "mi_norm": 0.0,
+      "rf_mdi_norm": 0.0004,
+      "perm_norm": 0.0002,
+      "gb_norm": 0.0015,
+      "coverage_pct": 100.0
+    },
+    {
+      "rank": 33,
+      "feature": "min_speed_kmh",
+      "composite_score": 0.0005,
+      "spearman_norm": 0.0011,
+      "mi_norm": 0.0,
+      "rf_mdi_norm": 0.0007,
+      "perm_norm": 0.0005,
+      "gb_norm": 0.0008,
+      "coverage_pct": 83.8
+    },
+    {
+      "rank": 34,
+      "feature": "avg_slow_corner_kmh",
+      "composite_score": 0.0004,
+      "spearman_norm": 0.0005,
+      "mi_norm": 0.0,
+      "rf_mdi_norm": 0.0008,
+      "perm_norm": 0.0006,
+      "gb_norm": 0.0007,
+      "coverage_pct": 83.8
+    },
+    {
+      "rank": 35,
+      "feature": "max_tyre_life",
+      "composite_score": 0.0,
+      "spearman_norm": 0.0,
+      "mi_norm": 0.0,
+      "rf_mdi_norm": 0.0,
+      "perm_norm": 0.0,
+      "gb_norm": 0.0,
+      "coverage_pct": 97.4
+    },
+    {
+      "rank": 36,
+      "feature": "pb_rate",
+      "composite_score": 0.0,
+      "spearman_norm": 0.0,
+      "mi_norm": 0.0,
+      "rf_mdi_norm": 0.0,
+      "perm_norm": 0.0,
+      "gb_norm": 0.0,
+      "coverage_pct": 97.4
+    },
+    {
+      "rank": 37,
+      "feature": "personal_bests",
+      "composite_score": 0.0,
+      "spearman_norm": 0.0,
+      "mi_norm": 0.0,
+      "rf_mdi_norm": 0.0,
+      "perm_norm": 0.0,
+      "gb_norm": 0.0,
+      "coverage_pct": 97.4
+    },
+    {
+      "rank": 38,
+      "feature": "soft_pct",
+      "composite_score": 0.0,
+      "spearman_norm": 0.0,
+      "mi_norm": 0.0,
+      "rf_mdi_norm": 0.0,
+      "perm_norm": 0.0,
+      "gb_norm": 0.0,
+      "coverage_pct": 97.4
+    }
+  ]
+}
