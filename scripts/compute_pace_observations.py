@@ -152,6 +152,29 @@ def compute_pace_observations(db, years: List[int], source: str = "") -> int:
     return computed
 
 
+def _parse_year_env(env_val: str, fallback: int) -> int:
+    """Parse a year env var that may be a comma-separated list (e.g. '2018,2019,2025').
+    Returns the minimum year from the list, or fallback if empty/unparseable."""
+    if not env_val:
+        return fallback
+    try:
+        years = [int(y.strip()) for y in env_val.split(",") if y.strip()]
+        return min(years) if years else fallback
+    except ValueError:
+        return fallback
+
+
+def _parse_year_env_max(env_val: str, fallback: int) -> int:
+    """Like _parse_year_env but returns the maximum year from the list."""
+    if not env_val:
+        return fallback
+    try:
+        years = [int(y.strip()) for y in env_val.split(",") if y.strip()]
+        return max(years) if years else fallback
+    except ValueError:
+        return fallback
+
+
 def main():
     import argparse
     current_year = datetime.now().year
@@ -159,10 +182,14 @@ def main():
     parser.add_argument("--year",     type=int, default=None,
                         help="Anno singolo (override min/max)")
     parser.add_argument("--min-year", type=int,
-                        default=int(os.environ.get("MIN_YEAR", os.environ.get("YEAR", "2019"))),
+                        default=_parse_year_env(
+                            os.environ.get("MIN_YEAR", os.environ.get("YEAR", "")), 2019
+                        ),
                         help="Anno minimo (default: 2019)")
     parser.add_argument("--max-year", type=int,
-                        default=int(os.environ.get("MAX_YEAR", str(current_year))),
+                        default=_parse_year_env_max(
+                            os.environ.get("MAX_YEAR", os.environ.get("YEAR", "")), current_year
+                        ),
                         help="Anno massimo (default: anno corrente)")
     parser.add_argument("--source", type=str, default=None,
                         help="Source: tracinginsights, kaggle, or None for all")
