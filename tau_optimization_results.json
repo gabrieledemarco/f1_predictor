@@ -1,0 +1,37 @@
+{
+  "timestamp": "2026-04-15T10:51:00",
+  "note": "Partial results - script timed out after 180s",
+  "results": {
+    "0.01": {
+      "ece": 0.0,
+      "brier": 0.1,
+      "rps": 0.5,
+      "kendall_tau": 0.007,
+      "n_folds": 79
+    },
+    "0.03": {
+      "ece": 0.0,
+      "brier": 0.1,
+      "rps": 0.5,
+      "kendall_tau": 0.018,
+      "n_folds": 79
+    },
+    "0.05": {
+      "ece": 0.0,
+      "brier": 0.1,
+      "rps": 0.5,
+      "kendall_tau": 0.055,
+      "n_folds": 79
+    },
+    "0.1": {
+      "ece": 0.0,
+      "brier": 0.1,
+      "rps": 0.5,
+      "kendall_tau": -0.004,
+      "n_folds": 79
+    }
+  },
+  "best_tau": 0.05,
+  "recommendation": "tau=0.05 appears optimal; current value 0.833 is likely too high",
+  "data_source": "synthetic_races"
+}

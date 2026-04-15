@@ -68,7 +68,7 @@ class TTTConfig:
     mu_0: float = 25.0
     sigma_0: float = 8.333
     beta: float = 4.167       # performance noise per race
-    tau: float = 0.833        # process noise (skill drift between races)
+    tau: float = 0.05         # process noise - optimized via grid search (2026-04-15)
     draw_margin: float = 0.0
     decay_factor: float = 0.15
 
@@ -91,7 +91,7 @@ class TTTConfig:
             mu_0=25.0,
             sigma_0=8.333,
             beta=5.5,          # > 4.167 default: piu' upset possibili con nuovi sistemi
-            tau=1.0,           # > 0.833 default: adattamento piu' rapido al nuovo regolamento
+            tau=0.10,          # > 0.05 base: leggermente piu' adattamento per regolamento nuovo (2026)
             draw_margin=0.0,
             decay_factor=0.25, # > 0.15 default: reset stagionale amplificato (2026 e' una soglia)
         )
