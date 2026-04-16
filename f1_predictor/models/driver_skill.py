@@ -68,7 +68,7 @@ class TTTConfig:
     mu_0: float = 25.0
     sigma_0: float = 8.333
     beta: float = 4.167       # performance noise per race
-    tau: float = 0.05         # process noise - optimized via grid search (2026-04-15)
+    tau: float = 0.833        # process noise — Dangauthier (2007): tau ~ 0.1 * sigma_0
     draw_margin: float = 0.0
     decay_factor: float = 0.15
 
