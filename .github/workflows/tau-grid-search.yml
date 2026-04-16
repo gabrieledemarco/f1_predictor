@@ -1,0 +1,382 @@
+name: TTT Tau Grid Search
+
+# Ottimizzazione end-to-end del parametro tau (TTT process noise).
+#
+# Strategia:
+#   Matrix: tau_value × val_year
+#   Per ogni combinazione (tau, anno):
+#     - Allena su 2018..anno-1  (con il tau specificato)
+#     - Valida su anno (stagione completa, dry-run)
+#     - Registra Kendall τ, Brier, RPS, LogLoss, ECE
+#
+#   Job finale: tabella comparativa tau×anno → identifica il tau ottimale
+#   come quello con Kendall τ medio più alto su tutti gli anni di validazione.
+#
+# Utilizzo tipico:
+#   tau_values="0.30,0.50,0.833,1.20,1.50"  val_years="2022,2023,2024"
+#
+# NOTA: usa i dati reali in MongoDB (non sintetici).
+# Prerequisito: secret MONGODB_URI configurato.
+
+on:
+  workflow_dispatch:
+    inputs:
+      tau_values:
+        description: "Tau values da testare (CSV, es. 0.30,0.50,0.833,1.20,1.50)"
+        required: false
+        default: "0.30,0.50,0.833,1.20,1.50"
+      val_years:
+        description: "Anni di validazione (CSV, es. 2022,2023,2024)"
+        required: false
+        default: "2022,2023,2024"
+      n_mc_sim:
+        description: "Simulazioni Monte Carlo per job (ridotto per velocità)"
+        required: false
+        default: "5000"
+      train_from:
+        description: "Primo anno di training"
+        required: false
+        default: "2018"
+
+jobs:
+  # ──────────────────────────────────────────────────────────────────────────
+  # Genera la matrice tau × anno come JSON
+  # ──────────────────────────────────────────────────────────────────────────
+  setup-matrix:
+    name: "Setup tau × year matrix"
+    runs-on: ubuntu-latest
+    outputs:
+      combinations: ${{ steps.gen.outputs.combinations }}
+
+    steps:
+      - name: Generate combinations JSON
+        id: gen
+        run: |
+          python3 - << 'PYEOF'
+          import json, os
+
+          tau_input = "${{ github.event.inputs.tau_values || '0.30,0.50,0.833,1.20,1.50' }}"
+          year_input = "${{ github.event.inputs.val_years || '2022,2023,2024' }}"
+
+          taus  = [t.strip() for t in tau_input.split(",") if t.strip()]
+          years = [y.strip() for y in year_input.split(",") if y.strip()]
+
+          combos = [{"tau": t, "val_year": y} for t in taus for y in years]
+
+          out = json.dumps(combos)
+          print(f"Combinations ({len(combos)}): {out}")
+
+          with open(os.environ["GITHUB_OUTPUT"], "a") as f:
+              f.write(f"combinations={out}\n")
+          PYEOF
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # Un job per combinazione (tau, anno) — girano tutti in parallelo
+  # ──────────────────────────────────────────────────────────────────────────
+  run-combination:
+    name: "tau=${{ matrix.combo.tau }} | ${{ matrix.combo.val_year }}"
+    runs-on: ubuntu-latest
+    needs: setup-matrix
+    timeout-minutes: 60
+    environment: MONGODB_URI
+
+    strategy:
+      fail-fast: false
+      matrix:
+        combo: ${{ fromJson(needs.setup-matrix.outputs.combinations) }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install scikit-learn scipy numpy pandas pymongo[srv] requests python-dotenv
+
+      - name: Run pipeline (tau=${{ matrix.combo.tau }}, val=${{ matrix.combo.val_year }})
+        id: run
+        env:
+          MONGODB_URI: ${{ secrets.MONGODB_URI }}
+          MONGO_URI: ${{ secrets.MONGODB_URI }}
+          THE_ODDS_API_KEY: ${{ secrets.THE_ODDS_API_KEY }}
+        run: |
+          TAU="${{ matrix.combo.tau }}"
+          VAL_YEAR="${{ matrix.combo.val_year }}"
+          TRAIN_FROM="${{ github.event.inputs.train_from || '2018' }}"
+          MC="${{ github.event.inputs.n_mc_sim || '5000' }}"
+
+          echo "=== tau=${TAU} | train=${TRAIN_FROM}..$((VAL_YEAR-1)) | val=${VAL_YEAR} | MC=${MC} ==="
+
+          python train_pipeline.py \
+            --year "$VAL_YEAR" \
+            --through-round 24 \
+            --train-from "$TRAIN_FROM" \
+            --val-from "$VAL_YEAR" \
+            --n-mc-sim "$MC" \
+            --ridge-alpha 10.0 \
+            --ttt-tau "$TAU" \
+            --dry-run \
+            2>&1 | tee "training_tau${TAU}_${VAL_YEAR}.log"
+
+      - name: Extract metrics
+        id: metrics
+        run: |
+          TAU="${{ matrix.combo.tau }}"
+          VAL_YEAR="${{ matrix.combo.val_year }}"
+          LOG="training_tau${TAU}_${VAL_YEAR}.log"
+
+          python3 - << PYEOF
+          import re, json, os
+
+          tau_val  = "$TAU"
+          val_year = "$VAL_YEAR"
+          log_file = f"training_tau{tau_val}_{val_year}.log"
+
+          metrics = {
+              "tau":         tau_val,
+              "val_year":    val_year,
+              "kendall_tau": None,
+              "brier":       None,
+              "logloss":     None,
+              "rps":         None,
+              "ece":         None,
+              "n_races":     None,
+          }
+
+          try:
+              with open(log_file) as f:
+                  content = f.read()
+
+              for line in content.splitlines():
+                  s = line.strip()
+                  if ("Kendall" in s) and ("τ" in s or "tau" in s.lower()):
+                      m = re.search(r"([+-]?\d+\.\d+)", s)
+                      if m: metrics["kendall_tau"] = float(m.group(1))
+                  elif "Brier" in s and "(mc)" in s:
+                      m = re.search(r"(\d+\.\d+)", s)
+                      if m: metrics["brier"] = float(m.group(1))
+                  elif "LogLoss" in s:
+                      m = re.search(r"(\d+\.\d+)", s)
+                      if m: metrics["logloss"] = float(m.group(1))
+                  elif "RPS mean" in s:
+                      m = re.search(r"(\d+\.\d+)", s)
+                      if m: metrics["rps"] = float(m.group(1))
+                  elif "ECE" in s:
+                      m = re.search(r"(\d+\.\d+)", s)
+                      if m: metrics["ece"] = float(m.group(1))
+                  elif "gare valutate" in s:
+                      m = re.search(r"(\d+) gare valutate", s)
+                      if m: metrics["n_races"] = int(m.group(1))
+          except Exception as e:
+              print(f"Errore parsing log: {e}")
+
+          print(json.dumps(metrics, indent=2))
+
+          fname = f"metrics_tau{tau_val}_{val_year}.json"
+          with open(fname, "w") as f:
+              json.dump(metrics, f, indent=2)
+
+          with open(os.environ["GITHUB_OUTPUT"], "a") as f:
+              for k, v in metrics.items():
+                  if v is not None:
+                      f.write(f"{k}={v}\n")
+          PYEOF
+
+      - name: Upload metrics artifact
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: tau-metrics-${{ matrix.combo.tau }}-${{ matrix.combo.val_year }}
+          path: |
+            metrics_tau${{ matrix.combo.tau }}_${{ matrix.combo.val_year }}.json
+            training_tau${{ matrix.combo.tau }}_${{ matrix.combo.val_year }}.log
+          retention-days: 14
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # Aggregazione: tabella tau×anno + raccomandazione tau ottimale
+  # ──────────────────────────────────────────────────────────────────────────
+  aggregate-results:
+    name: "Aggregate & Recommend"
+    runs-on: ubuntu-latest
+    needs: run-combination
+    if: always()
+
+    steps:
+      - name: Download all metrics artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: tau-metrics-*
+          merge-multiple: true
+          path: metrics/
+
+      - name: Build tau comparison table
+        run: |
+          python3 - << 'PYEOF'
+          import json, os, glob
+          from collections import defaultdict
+
+          files = sorted(glob.glob("metrics/metrics_tau*.json"))
+          if not files:
+              print("Nessun file metriche trovato")
+              exit(0)
+
+          rows = []
+          for f in files:
+              try:
+                  with open(f) as fp:
+                      rows.append(json.load(fp))
+              except Exception as e:
+                  print(f"Errore lettura {f}: {e}")
+
+          # Raggruppa per tau
+          by_tau = defaultdict(list)
+          for r in rows:
+              by_tau[r["tau"]].append(r)
+
+          taus_sorted = sorted(by_tau.keys(), key=float)
+
+          def fmt(v, d=3):
+              return f"{v:+.{d}f}" if v is not None and d == 3 else (f"{v:.{d}f}" if v is not None else "  n/a  ")
+
+          def status(v, tgt, hi):
+              if v is None: return "?"
+              return "OK" if (v >= tgt if hi else v <= tgt) else "WARN"
+
+          # ── Console output ────────────────────────────────────────────────
+          years = sorted({r["val_year"] for r in rows})
+
+          print()
+          print("=" * 90)
+          print("  TTT TAU GRID SEARCH — KENDALL τ PER ANNO")
+          print("=" * 90)
+          header = f"  {'tau':>7} |"
+          for y in years:
+              header += f" {y:>10} |"
+          header += f" {'media':>8} | {'rank':>5}"
+          print(header)
+          print("  " + "-" * 88)
+
+          tau_means = {}
+          for tau in taus_sorted:
+              year_taus = {}
+              for r in by_tau[tau]:
+                  kt = r.get("kendall_tau")
+                  if kt is not None:
+                      year_taus[r["val_year"]] = kt
+
+              vals = list(year_taus.values())
+              mean_kt = sum(vals) / len(vals) if vals else None
+              tau_means[tau] = mean_kt
+
+              row = f"  {tau:>7} |"
+              for y in years:
+                  v = year_taus.get(y)
+                  s = f"{v:+.3f}" if v is not None else "  n/a "
+                  row += f" {s:>10} |"
+              m = f"{mean_kt:+.3f}" if mean_kt is not None else "  n/a "
+              row += f" {m:>8} |"
+              print(row)
+
+          print("=" * 90)
+
+          # Ranking
+          valid_means = {t: v for t, v in tau_means.items() if v is not None}
+          if valid_means:
+              ranked = sorted(valid_means.keys(), key=lambda t: valid_means[t], reverse=True)
+              print("\n  RANKING tau per Kendall τ medio:")
+              for i, t in enumerate(ranked, 1):
+                  mark = " ← BEST" if i == 1 else ""
+                  print(f"    {i}. tau={t:>6}  τ_medio={valid_means[t]:+.3f}{mark}")
+
+              best_tau = ranked[0]
+              best_val = valid_means[best_tau]
+
+          print()
+
+          # ── GitHub Step Summary ───────────────────────────────────────────
+          summary_file = os.environ.get("GITHUB_STEP_SUMMARY", "/dev/null")
+          with open(summary_file, "w") as f:
+              f.write("## TTT Tau Grid Search — Kendall τ\n\n")
+
+              # Tabella τ per anno
+              f.write("| tau |")
+              for y in years:
+                  f.write(f" {y} |")
+              f.write(" **media** |\n")
+
+              f.write("|-----|")
+              for _ in years:
+                  f.write("------|")
+              f.write("----------|\n")
+
+              for tau in taus_sorted:
+                  year_taus = {}
+                  for r in by_tau[tau]:
+                      kt = r.get("kendall_tau")
+                      if kt is not None:
+                          year_taus[r["val_year"]] = kt
+
+                  vals = list(year_taus.values())
+                  mean_kt = sum(vals) / len(vals) if vals else None
+
+                  f.write(f"| `{tau}` |")
+                  for y in years:
+                      v = year_taus.get(y)
+                      cell = f"{v:+.3f}" if v is not None else "n/a"
+                      ok = v is not None and v >= 0.45
+                      icon = " ✅" if ok else (" ⚠️" if v is not None else "")
+                      f.write(f" {cell}{icon} |")
+                  m = f"{mean_kt:+.3f}" if mean_kt is not None else "n/a"
+                  f.write(f" **{m}** |\n")
+
+              if valid_means:
+                  f.write(f"\n### Raccomandazione\n")
+                  f.write(f"**tau ottimale = `{best_tau}`** "
+                          f"(Kendall τ medio = `{best_val:+.3f}`)\n\n")
+                  f.write("> Per applicare: aggiornare `TTTConfig.tau` in "
+                          "`f1_predictor/models/driver_skill.py`\n")
+
+              # Tabella metriche complete per tau ottimale
+              if valid_means:
+                  f.write(f"\n### Metriche complete per tau={best_tau}\n\n")
+                  f.write("| Anno | Kendall τ | Brier | RPS | LogLoss | ECE | N gare |\n")
+                  f.write("|------|-----------|-------|-----|---------|-----|--------|\n")
+
+                  for r in sorted(by_tau[best_tau], key=lambda x: x["val_year"]):
+                      tau_v  = r.get("kendall_tau")
+                      brier  = r.get("brier")
+                      rps    = r.get("rps")
+                      ll     = r.get("logloss")
+                      ece    = r.get("ece")
+                      n      = r.get("n_races", "?")
+                      year   = r.get("val_year", "?")
+
+                      def cell(v, tgt, hi, dec=4):
+                          if v is None: return "n/a"
+                          ok = v >= tgt if hi else v <= tgt
+                          return f"{v:.{dec}f} {'✅' if ok else '⚠️'}"
+
+                      f.write(f"| {year} "
+                              f"| {cell(tau_v, 0.45, True,  3)} "
+                              f"| {cell(brier, 0.20, False, 4)} "
+                              f"| {cell(rps,   0.15, False, 4)} "
+                              f"| {cell(ll,    1.00, False, 4)} "
+                              f"| {cell(ece,   0.05, False, 4)} "
+                              f"| {n} |\n")
+
+          print("Report scritto su GitHub Step Summary")
+          PYEOF
+
+      - name: Upload aggregated results
+        uses: actions/upload-artifact@v4
+        with:
+          name: tau-grid-search-summary
+          path: metrics/
+          retention-days: 30

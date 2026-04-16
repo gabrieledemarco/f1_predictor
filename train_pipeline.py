@@ -68,6 +68,8 @@ def parse_args():
                    help="Numero simulazioni Monte Carlo")
     p.add_argument("--ridge-alpha",    type=float, default=10.0,
                    help="Regolarizzazione Ridge")
+    p.add_argument("--ttt-tau",        type=float, default=0.833,
+                   help="TTT process noise tau — Dangauthier: tau~0.1*sigma_0=0.833")
     p.add_argument("--min-calib-obs",  type=int, default=100,
                    help="Osservazioni minime per calibratore isotonic")
     p.add_argument("--dry-run",        action="store_true",
@@ -245,7 +247,7 @@ def run_training(args) -> dict:
     # ── 2. Costruisci pipeline ────────────────────────────────────────
     _step_start(2, "Inizializzazione F1PredictionPipeline (4 layer)")
     pipeline = F1PredictionPipeline(
-        ttt_config=TTTConfig(),
+        ttt_config=TTTConfig(tau=args.ttt_tau),
         kalman_config=KalmanConfig(),
         sim_config=RaceSimConfig(n_simulations=args.n_mc_sim),
         min_edge=0.04,
@@ -269,6 +271,7 @@ def run_training(args) -> dict:
         val_to=args.year,
         n_mc_sim=args.n_mc_sim,
         ridge_alpha=args.ridge_alpha,
+        ttt_tau=args.ttt_tau,
     )
     n_eval = val_metrics.get("n_races_evaluated", 0)
     _step_done(3, f"{n_eval} gare valutate")
@@ -279,7 +282,7 @@ def run_training(args) -> dict:
     n_mc_final = min(args.n_mc_sim, 10_000)  # Max 10k per final fit
     _step_start(4, f"Fit finale su tutti i {len(races)} gare  (TTT + Kalman)")
     pipeline_final = F1PredictionPipeline(
-        ttt_config=TTTConfig(),
+        ttt_config=TTTConfig(tau=args.ttt_tau),
         kalman_config=KalmanConfig(),
         sim_config=RaceSimConfig(n_simulations=n_mc_final),
     )
@@ -360,7 +363,8 @@ def run_training(args) -> dict:
 
 def _run_walkforward(pipeline, races: list[dict],
                      train_from: int, val_from: int, val_to: int,
-                     n_mc_sim: int, ridge_alpha: float) -> dict:
+                     n_mc_sim: int, ridge_alpha: float,
+                     ttt_tau: float = 0.833) -> dict:
     """
     Esegue walk-forward temporale con embargo di 1 gara.
 
@@ -386,7 +390,7 @@ def _run_walkforward(pipeline, races: list[dict],
 
     # Pipeline di validazione (non quella finale)
     wf_pipeline = F1PredictionPipeline(
-        ttt_config=TTTConfig(),
+        ttt_config=TTTConfig(tau=ttt_tau),
         kalman_config=KalmanConfig(),
         # FIX: use reduced MC count for speed in WF loop, full count only for final training
         sim_config=RaceSimConfig(n_simulations=min(n_mc_sim, 5_000)),
@@ -750,7 +754,7 @@ def _build_race_entity_from_dict(race_dict: dict):
 
 
 def tune_kalman_config(races: list, train_from: int, val_from: int,
-                        ridge_alpha: float = 10.0) -> dict:
+                        ridge_alpha: float = 10.0, ttt_tau: float = 0.833) -> dict:
     """
     TASK 3.2 — Grid search Q/R per KalmanConfig.
     Massimizza Kendall tau sul primo anno di validation.
@@ -772,14 +776,14 @@ def tune_kalman_config(races: list, train_from: int, val_from: int,
     for q, r in itertools.product(q_values, r_values):
         try:
             pipeline = F1PredictionPipeline(
-                ttt_config=TTTConfig(),
+                ttt_config=TTTConfig(tau=ttt_tau),
                 kalman_config=KalmanConfig(Q=q, R=r),
                 sim_config=RaceSimConfig(n_simulations=3_000),
             )
             m = _run_walkforward(
                 pipeline=pipeline, races=races,
                 train_from=train_from, val_from=val_from, val_to=val_to,
-                n_mc_sim=3_000, ridge_alpha=ridge_alpha,
+                n_mc_sim=3_000, ridge_alpha=ridge_alpha, ttt_tau=ttt_tau,
             )
             tau = m.get("kendall_tau", 0.0)
             log.info(f"  [KalmanTune] Q={q:.3f} R={r:.3f} -> tau={tau:.3f}")
