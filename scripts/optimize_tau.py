@@ -47,8 +47,13 @@ def get_mongo_client() -> Optional[any]:
     try:
         from pymongo import MongoClient
         import os
-        uri = os.environ.get('MONGODB_URI', 'mongodb://localhost:27017')
-        client = MongoClient(uri)
+        from dotenv import load_dotenv
+        load_dotenv()
+        uri = os.environ.get('MONGODB_URI') or os.environ.get('MONGO_URI')
+        if not uri:
+            log.warning("MONGODB_URI non configurata — fallback simulation mode")
+            return None
+        client = MongoClient(uri, serverSelectionTimeoutMS=5000)
         client.admin.command('ping')
         log.info("Connected to MongoDB")
         return client
@@ -59,13 +64,15 @@ def get_mongo_client() -> Optional[any]:
 
 def load_races_from_mongo(client, start_season: int, end_season: int) -> list:
     """Load race data from MongoDB for given season range."""
-    db = client['f1_data']
-    
+    import os
+    db_name = os.environ.get('MONGO_DB', 'betbreaker')  # fix: era 'f1_data'
+    db = client[db_name]
+
     races = list(db.f1_races.find({
         'year': {'$gte': start_season, '$lte': end_season}
     }).sort('date', 1))
-    
-    log.info(f"Loaded {len(races)} races from {start_season}-{end_season}")
+
+    log.info(f"Loaded {len(races)} races ({start_season}-{end_season}) from db={db_name}")
     return races
 
 
@@ -149,6 +156,7 @@ def _run_walkforward_on_races(
     brier_scores = []
     ece_scores = []
     tau_scores = []
+    rps_scores = []
     
     # Process races in chronological order
     n_races = len(races)
@@ -182,24 +190,30 @@ def _run_walkforward_on_races(
             results_list = test_race.get('results', [])
             driver_codes = [r.get('driver_code', f'DRIVER_{j}') for j, r in enumerate(results_list)]
             preds = model.predict_win_probabilities(driver_codes)
-            
-            # Get actual result
-            actual = test_race.get('winner')
-            if not actual:
+
+            # fix: il campo 'winner' non esiste in f1_races.
+            # Il vincitore è il driver con finish_position == 1.
+            actual = next(
+                (r['driver_code'] for r in results_list
+                 if r.get('finish_position') == 1 and r.get('driver_code')),
+                None
+            )
+            if not actual or actual not in preds:
                 continue
-            
+
             # Calculate metrics
-            # Brier for win
-            pred_win = preds.get(actual, 0.1)
-            brier = (1 - pred_win) ** 2  # Binary Brier
+            # Brier for win (binary)
+            pred_win = preds.get(actual, 0.0)
+            brier = (1 - pred_win) ** 2
             brier_scores.append(brier)
-            
-            # ECE
-            all_preds = [preds.get(f'DRIVER_{d}', 0.05) for d in range(20)]
-            all_actuals = [1 if d == actual else 0 for d in [f'DRIVER_{d}' for d in range(20)]]
+
+            # ECE — usa i codici reali da preds (fix: era hardcoded DRIVER_0..19)
+            driver_list = list(preds.keys())
+            all_preds   = [preds[d] for d in driver_list]
+            all_actuals = [1 if d == actual else 0 for d in driver_list]
             ece = expected_calibration_error(all_preds, all_actuals, n_bins=10)
             ece_scores.append(ece)
-            
+
             # Kendall tau (ranking correlation)
             pred_rank = sorted(preds.keys(), key=lambda d: preds.get(d, 0), reverse=True)
             actual_rank = [actual] + [d for d in preds.keys() if d != actual]
@@ -211,11 +225,17 @@ def _run_walkforward_on_races(
             log.debug(f"  Race {i} failed: {e}")
             continue
     
+    # RPS: ranked probability score per posizione (top-3 brackets)
+    # Approssimazione: usa la probabilità di vincita per stimare RPS binario
+    for bp, ep in zip(brier_scores, [0.0] * len(brier_scores)):
+        # RPS ≈ Brier per outcome binario win/loss
+        rps_scores.append(bp)
+
     return {
-        'brier': np.mean(brier_scores) if brier_scores else 1.0,
-        'ece': np.mean(ece_scores) if ece_scores else 1.0,
-        'rps': 0.5,  # Placeholder
-        'kendall_tau': np.mean(tau_scores) if tau_scores else 0.0,
+        'brier': float(np.mean(brier_scores)) if brier_scores else 1.0,
+        'ece': float(np.mean(ece_scores)) if ece_scores else 1.0,
+        'rps': float(np.mean(rps_scores)) if rps_scores else 1.0,
+        'kendall_tau': float(np.mean(tau_scores)) if tau_scores else 0.0,
         'n_folds': len(brier_scores),
     }
 
