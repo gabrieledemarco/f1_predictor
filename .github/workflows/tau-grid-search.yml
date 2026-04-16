@@ -19,6 +19,10 @@ name: TTT Tau Grid Search
 # Prerequisito: secret MONGODB_URI configurato.
 
 on:
+  push:
+    paths:
+      - "trigger/tau-search.txt"
+
   workflow_dispatch:
     inputs:
       tau_values:
@@ -200,15 +204,30 @@ jobs:
           retention-days: 14
 
   # ──────────────────────────────────────────────────────────────────────────
-  # Aggregazione: tabella tau×anno + raccomandazione tau ottimale
+  # Aggregazione: analisi avanzata, grafici matplotlib, report committato,
+  # salvataggio MongoDB
   # ──────────────────────────────────────────────────────────────────────────
   aggregate-results:
-    name: "Aggregate & Recommend"
+    name: "Aggregate, Plot & Commit Report"
     runs-on: ubuntu-latest
     needs: run-combination
     if: always()
+    environment: MONGODB_URI
 
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install analysis dependencies
+        run: pip install matplotlib seaborn numpy pandas pymongo[srv]
+
       - name: Download all metrics artifacts
         uses: actions/download-artifact@v4
         with:
@@ -216,167 +235,42 @@ jobs:
           merge-multiple: true
           path: metrics/
 
-      - name: Build tau comparison table
+      - name: Run analysis — plots + report + MongoDB
+        env:
+          MONGODB_URI: ${{ secrets.MONGODB_URI }}
+          MONGO_URI:   ${{ secrets.MONGODB_URI }}
+          RUN_ID:      ${{ github.run_id }}
+          RUN_URL:     ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          TAU_VALUES:  ${{ github.event.inputs.tau_values || '0.30,0.50,0.833,1.20,1.50' }}
+          VAL_YEARS:   ${{ github.event.inputs.val_years  || '2022,2023,2024' }}
+          N_MC_SIM:    ${{ github.event.inputs.n_mc_sim   || '5000' }}
+        run: python scripts/analyze_tau_results.py --metrics-dir metrics/ --out-dir docs/tau_analysis/
+
+      - name: Write GitHub Step Summary
         run: |
-          python3 - << 'PYEOF'
-          import json, os, glob
-          from collections import defaultdict
+          if [ -f docs/tau_analysis/step_summary.md ]; then
+            cat docs/tau_analysis/step_summary.md >> $GITHUB_STEP_SUMMARY
+          fi
 
-          files = sorted(glob.glob("metrics/metrics_tau*.json"))
-          if not files:
-              print("Nessun file metriche trovato")
-              exit(0)
+      - name: Commit report to repository
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git pull --rebase origin main || true
+          git add docs/tau_analysis/
+          if git diff --cached --quiet; then
+            echo "Nothing to commit"
+          else
+            git commit -m "chore: tau grid search report $(date -u +%Y%m%d_%H%M) [skip ci]"
+            git push origin main
+          fi
 
-          rows = []
-          for f in files:
-              try:
-                  with open(f) as fp:
-                      rows.append(json.load(fp))
-              except Exception as e:
-                  print(f"Errore lettura {f}: {e}")
-
-          # Raggruppa per tau
-          by_tau = defaultdict(list)
-          for r in rows:
-              by_tau[r["tau"]].append(r)
-
-          taus_sorted = sorted(by_tau.keys(), key=float)
-
-          def fmt(v, d=3):
-              return f"{v:+.{d}f}" if v is not None and d == 3 else (f"{v:.{d}f}" if v is not None else "  n/a  ")
-
-          def status(v, tgt, hi):
-              if v is None: return "?"
-              return "OK" if (v >= tgt if hi else v <= tgt) else "WARN"
-
-          # ── Console output ────────────────────────────────────────────────
-          years = sorted({r["val_year"] for r in rows})
-
-          print()
-          print("=" * 90)
-          print("  TTT TAU GRID SEARCH — KENDALL τ PER ANNO")
-          print("=" * 90)
-          header = f"  {'tau':>7} |"
-          for y in years:
-              header += f" {y:>10} |"
-          header += f" {'media':>8} | {'rank':>5}"
-          print(header)
-          print("  " + "-" * 88)
-
-          tau_means = {}
-          for tau in taus_sorted:
-              year_taus = {}
-              for r in by_tau[tau]:
-                  kt = r.get("kendall_tau")
-                  if kt is not None:
-                      year_taus[r["val_year"]] = kt
-
-              vals = list(year_taus.values())
-              mean_kt = sum(vals) / len(vals) if vals else None
-              tau_means[tau] = mean_kt
-
-              row = f"  {tau:>7} |"
-              for y in years:
-                  v = year_taus.get(y)
-                  s = f"{v:+.3f}" if v is not None else "  n/a "
-                  row += f" {s:>10} |"
-              m = f"{mean_kt:+.3f}" if mean_kt is not None else "  n/a "
-              row += f" {m:>8} |"
-              print(row)
-
-          print("=" * 90)
-
-          # Ranking
-          valid_means = {t: v for t, v in tau_means.items() if v is not None}
-          if valid_means:
-              ranked = sorted(valid_means.keys(), key=lambda t: valid_means[t], reverse=True)
-              print("\n  RANKING tau per Kendall τ medio:")
-              for i, t in enumerate(ranked, 1):
-                  mark = " ← BEST" if i == 1 else ""
-                  print(f"    {i}. tau={t:>6}  τ_medio={valid_means[t]:+.3f}{mark}")
-
-              best_tau = ranked[0]
-              best_val = valid_means[best_tau]
-
-          print()
-
-          # ── GitHub Step Summary ───────────────────────────────────────────
-          summary_file = os.environ.get("GITHUB_STEP_SUMMARY", "/dev/null")
-          with open(summary_file, "w") as f:
-              f.write("## TTT Tau Grid Search — Kendall τ\n\n")
-
-              # Tabella τ per anno
-              f.write("| tau |")
-              for y in years:
-                  f.write(f" {y} |")
-              f.write(" **media** |\n")
-
-              f.write("|-----|")
-              for _ in years:
-                  f.write("------|")
-              f.write("----------|\n")
-
-              for tau in taus_sorted:
-                  year_taus = {}
-                  for r in by_tau[tau]:
-                      kt = r.get("kendall_tau")
-                      if kt is not None:
-                          year_taus[r["val_year"]] = kt
-
-                  vals = list(year_taus.values())
-                  mean_kt = sum(vals) / len(vals) if vals else None
-
-                  f.write(f"| `{tau}` |")
-                  for y in years:
-                      v = year_taus.get(y)
-                      cell = f"{v:+.3f}" if v is not None else "n/a"
-                      ok = v is not None and v >= 0.45
-                      icon = " ✅" if ok else (" ⚠️" if v is not None else "")
-                      f.write(f" {cell}{icon} |")
-                  m = f"{mean_kt:+.3f}" if mean_kt is not None else "n/a"
-                  f.write(f" **{m}** |\n")
-
-              if valid_means:
-                  f.write(f"\n### Raccomandazione\n")
-                  f.write(f"**tau ottimale = `{best_tau}`** "
-                          f"(Kendall τ medio = `{best_val:+.3f}`)\n\n")
-                  f.write("> Per applicare: aggiornare `TTTConfig.tau` in "
-                          "`f1_predictor/models/driver_skill.py`\n")
-
-              # Tabella metriche complete per tau ottimale
-              if valid_means:
-                  f.write(f"\n### Metriche complete per tau={best_tau}\n\n")
-                  f.write("| Anno | Kendall τ | Brier | RPS | LogLoss | ECE | N gare |\n")
-                  f.write("|------|-----------|-------|-----|---------|-----|--------|\n")
-
-                  for r in sorted(by_tau[best_tau], key=lambda x: x["val_year"]):
-                      tau_v  = r.get("kendall_tau")
-                      brier  = r.get("brier")
-                      rps    = r.get("rps")
-                      ll     = r.get("logloss")
-                      ece    = r.get("ece")
-                      n      = r.get("n_races", "?")
-                      year   = r.get("val_year", "?")
-
-                      def cell(v, tgt, hi, dec=4):
-                          if v is None: return "n/a"
-                          ok = v >= tgt if hi else v <= tgt
-                          return f"{v:.{dec}f} {'✅' if ok else '⚠️'}"
-
-                      f.write(f"| {year} "
-                              f"| {cell(tau_v, 0.45, True,  3)} "
-                              f"| {cell(brier, 0.20, False, 4)} "
-                              f"| {cell(rps,   0.15, False, 4)} "
-                              f"| {cell(ll,    1.00, False, 4)} "
-                              f"| {cell(ece,   0.05, False, 4)} "
-                              f"| {n} |\n")
-
-          print("Report scritto su GitHub Step Summary")
-          PYEOF
-
-      - name: Upload aggregated results
+      - name: Upload aggregated artifacts
         uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: tau-grid-search-summary
-          path: metrics/
+          path: |
+            metrics/
+            docs/tau_analysis/
           retention-days: 30
