@@ -10,9 +10,13 @@ on:
   workflow_dispatch:
     inputs:
       year:
-        description: "Anno di validazione (es. 2023 per validare sul 2023 completo)"
+        description: "Anno di validazione — ultimo anno del test set (es. 2024)"
         required: true
-        default: "2023"
+        default: "2024"
+      val_from:
+        description: "Primo anno del test set walk-forward (es. 2022). Default = year."
+        required: false
+        default: ""
       through_round:
         description: "Ultimo round completato (es. 24 per stagione completa)"
         required: true
@@ -102,19 +106,24 @@ jobs:
       - name: Determine training parameters
         id: params
         run: |
-          YEAR="${{ github.event.inputs.year || '2023' }}"
-          ROUND="${{ github.event.inputs.through_round || '22' }}"
+          YEAR="${{ github.event.inputs.year || '2024' }}"
+          ROUND="${{ github.event.inputs.through_round || '24' }}"
           DRY="${{ github.event.inputs.dry_run || 'false' }}"
           MC="${{ github.event.inputs.n_mc_sim || '50000' }}"
-          # val_from = YEAR per validare solo sull'anno target
-          # Con YEAR=2023, val_from=2023: train=2018-2022, test=2023
-          VAL_FROM=$YEAR
-          echo "year=$YEAR"       >> $GITHUB_OUTPUT
-          echo "round=$ROUND"     >> $GITHUB_OUTPUT
-          echo "dry_run=$DRY"     >> $GITHUB_OUTPUT
-          echo "n_mc_sim=$MC"     >> $GITHUB_OUTPUT
+          # val_from: se non specificato usa YEAR (valida solo quell'anno)
+          # se specificato < YEAR: valida su finestra multi-anno val_from..YEAR
+          VAL_FROM_INPUT="${{ github.event.inputs.val_from }}"
+          if [ -n "$VAL_FROM_INPUT" ] && [ "$VAL_FROM_INPUT" -lt "$YEAR" ] 2>/dev/null; then
+            VAL_FROM="$VAL_FROM_INPUT"
+          else
+            VAL_FROM="$YEAR"
+          fi
+          echo "year=$YEAR"         >> $GITHUB_OUTPUT
+          echo "round=$ROUND"       >> $GITHUB_OUTPUT
+          echo "dry_run=$DRY"       >> $GITHUB_OUTPUT
+          echo "n_mc_sim=$MC"       >> $GITHUB_OUTPUT
           echo "val_from=$VAL_FROM" >> $GITHUB_OUTPUT
-          echo "Training: train=2018-$((YEAR-1)), test=$YEAR | R$ROUND | MC=$MC"
+          echo "Training: train=2018-$((VAL_FROM-1)), test=$VAL_FROM..$YEAR | R$ROUND | MC=$MC"
 
       - name: Run training pipeline
         env:

@@ -1,0 +1,343 @@
+name: Rolling Window Validation
+
+# Esegue walk-forward validation su più finestre temporali in parallelo
+# per misurare stabilità e trend delle metriche del modello nel tempo.
+#
+# Strategia:
+#   Per ogni anno VAL_YEAR in [val_from .. val_to]:
+#     - Allena su 2018 .. VAL_YEAR-1
+#     - Valida su VAL_YEAR (stagione completa)
+#     - Salva metriche: Kendall τ, Brier, RPS, LogLoss, ECE
+#
+#   Job finale: aggrega e stampa tabella comparativa + Step Summary.
+#
+# Utilizzo tipico:
+#   val_from=2021, val_to=2024  →  4 finestre parallele
+#   Risultato atteso: metriche migliorano all'aumentare del training data
+
+on:
+  workflow_dispatch:
+    inputs:
+      val_from:
+        description: "Primo anno di validazione (es. 2021)"
+        required: false
+        default: "2021"
+      val_to:
+        description: "Ultimo anno di validazione (es. 2024)"
+        required: false
+        default: "2024"
+      n_mc_sim:
+        description: "Simulazioni Monte Carlo per finestra (ridotto per velocità)"
+        required: false
+        default: "10000"
+      train_from:
+        description: "Primo anno di training (es. 2018)"
+        required: false
+        default: "2018"
+
+jobs:
+  # ──────────────────────────────────────────────────────────────────────────
+  # Genera la lista anni come JSON array per la matrix
+  # ──────────────────────────────────────────────────────────────────────────
+  setup-matrix:
+    name: "Setup validation windows"
+    runs-on: ubuntu-latest
+    outputs:
+      val_years: ${{ steps.gen.outputs.val_years }}
+
+    steps:
+      - name: Generate year matrix
+        id: gen
+        run: |
+          FROM="${{ github.event.inputs.val_from || '2021' }}"
+          TO="${{ github.event.inputs.val_to || '2024' }}"
+          YEARS="["
+          for year in $(seq $FROM $TO); do
+            YEARS="${YEARS}\"${year}\","
+          done
+          YEARS="${YEARS%,}]"
+          echo "val_years=$YEARS" >> $GITHUB_OUTPUT
+          echo "Validation windows: $YEARS"
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # Un job per anno di validazione — girano in parallelo
+  # ──────────────────────────────────────────────────────────────────────────
+  validate-window:
+    name: "Validate ${{ matrix.val_year }}"
+    runs-on: ubuntu-latest
+    needs: setup-matrix
+    timeout-minutes: 60
+    environment: MONGODB_URI
+
+    strategy:
+      fail-fast: false
+      matrix:
+        val_year: ${{ fromJson(needs.setup-matrix.outputs.val_years) }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install scikit-learn scipy numpy pandas pymongo[srv] requests python-dotenv
+
+      - name: Verify MongoDB availability
+        env:
+          MONGODB_URI: ${{ secrets.MONGODB_URI }}
+        run: |
+          python - << 'EOF'
+          import os, sys
+          from pymongo import MongoClient
+          uri = os.environ.get("MONGODB_URI", "")
+          if not uri:
+              print("MONGODB_URI non configurata — skip")
+              sys.exit(0)
+          try:
+              db = MongoClient(uri, serverSelectionTimeoutMS=5000)["betbreaker"]
+              n = db.jolpica_cache.count_documents({"year": {"$gte": 2018}})
+              print(f"jolpica_cache: {n} documenti (2018+)")
+              if n < 30:
+                  print("WARNING: dati insufficienti per training")
+          except Exception as e:
+              print(f"MongoDB check fallito: {e}")
+          EOF
+
+      - name: Run walk-forward for year ${{ matrix.val_year }}
+        id: wf
+        env:
+          MONGODB_URI: ${{ secrets.MONGODB_URI }}
+          THE_ODDS_API_KEY: ${{ secrets.THE_ODDS_API_KEY }}
+        run: |
+          TRAIN_FROM="${{ github.event.inputs.train_from || '2018' }}"
+          VAL_YEAR="${{ matrix.val_year }}"
+          MC="${{ github.event.inputs.n_mc_sim || '10000' }}"
+
+          echo "=== Window: train=${TRAIN_FROM}..$((VAL_YEAR-1)) | val=${VAL_YEAR} | MC=${MC} ==="
+
+          python train_pipeline.py \
+            --year "$VAL_YEAR" \
+            --through-round 24 \
+            --train-from "$TRAIN_FROM" \
+            --val-from "$VAL_YEAR" \
+            --n-mc-sim "$MC" \
+            --ridge-alpha 10.0 \
+            --dry-run \
+            2>&1 | tee "training_${VAL_YEAR}.log"
+
+      - name: Extract metrics from log
+        id: metrics
+        run: |
+          VAL_YEAR="${{ matrix.val_year }}"
+          LOG="training_${VAL_YEAR}.log"
+
+          # Estrae le metriche dal log strutturato di train_pipeline.py
+          python - << PYEOF
+          import re, json, os
+
+          val_year = "$VAL_YEAR"
+          log_file = f"training_{val_year}.log"
+
+          metrics = {
+              "val_year": val_year,
+              "kendall_tau": None,
+              "brier": None,
+              "logloss": None,
+              "rps": None,
+              "ece": None,
+              "n_races": None,
+          }
+
+          try:
+              with open(log_file) as f:
+                  content = f.read()
+
+              # Pattern: "Kendall τ   +0.123"
+              for line in content.splitlines():
+                  line_s = line.strip()
+                  if "Kendall" in line_s and ("τ" in line_s or "tau" in line_s.lower()):
+                      m = re.search(r"([+-]?\d+\.\d+)", line_s)
+                      if m: metrics["kendall_tau"] = float(m.group(1))
+                  elif "Brier" in line_s and "(mc)" in line_s:
+                      m = re.search(r"(\d+\.\d+)", line_s)
+                      if m: metrics["brier"] = float(m.group(1))
+                  elif "LogLoss" in line_s:
+                      m = re.search(r"(\d+\.\d+)", line_s)
+                      if m: metrics["logloss"] = float(m.group(1))
+                  elif "RPS mean" in line_s:
+                      m = re.search(r"(\d+\.\d+)", line_s)
+                      if m: metrics["rps"] = float(m.group(1))
+                  elif "ECE" in line_s:
+                      m = re.search(r"(\d+\.\d+)", line_s)
+                      if m: metrics["ece"] = float(m.group(1))
+                  elif "gare valutate" in line_s:
+                      m = re.search(r"(\d+) gare valutate", line_s)
+                      if m: metrics["n_races"] = int(m.group(1))
+
+          except Exception as e:
+              print(f"Errore parsing log: {e}")
+
+          print(json.dumps(metrics, indent=2))
+
+          # Salva per artifact
+          with open(f"metrics_{val_year}.json", "w") as f:
+              json.dump(metrics, f, indent=2)
+
+          # Output per il job successivo
+          with open(os.environ["GITHUB_OUTPUT"], "a") as f:
+              for k, v in metrics.items():
+                  if v is not None:
+                      f.write(f"{k}={v}\n")
+          PYEOF
+
+      - name: Upload metrics artifact
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: metrics-${{ matrix.val_year }}
+          path: |
+            metrics_${{ matrix.val_year }}.json
+            training_${{ matrix.val_year }}.log
+          retention-days: 14
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # Aggregazione: scarica tutti gli artifact e stampa tabella comparativa
+  # ──────────────────────────────────────────────────────────────────────────
+  aggregate-results:
+    name: "Aggregate & Report"
+    runs-on: ubuntu-latest
+    needs: validate-window
+    if: always()
+
+    steps:
+      - name: Download all metrics artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: metrics-*
+          merge-multiple: true
+          path: metrics/
+
+      - name: Build comparison table
+        run: |
+          python - << 'PYEOF'
+          import json, os, glob
+
+          files = sorted(glob.glob("metrics/metrics_*.json"))
+          if not files:
+              print("Nessun file metriche trovato")
+              exit(0)
+
+          rows = []
+          for f in files:
+              try:
+                  with open(f) as fp:
+                      rows.append(json.load(fp))
+              except Exception as e:
+                  print(f"Errore lettura {f}: {e}")
+
+          rows.sort(key=lambda r: r.get("val_year", ""))
+
+          # ── Console output ────────────────────────────────────────────
+          def fmt(v, decimals=3):
+              if v is None: return "  n/a  "
+              return f"{v:+.{decimals}f}" if decimals == 3 and v is not None else f"{v:.{decimals}f}"
+
+          def status(val, target, higher_better):
+              if val is None: return "?"
+              ok = val >= target if higher_better else val <= target
+              return "OK" if ok else "WARN"
+
+          print()
+          print("=" * 75)
+          print("  ROLLING WINDOW VALIDATION — RISULTATI COMPARATIVI")
+          print("=" * 75)
+          print(f"  {'Anno':>6} | {'Kendall τ':>10} | {'Brier':>8} | {'RPS':>8} | {'LogLoss':>8} | {'ECE':>8} | {'N gare':>7}")
+          print(f"  {'Target':>6} | {'>= 0.450':>10} | {'<= 0.200':>8} | {'<= 0.150':>8} | {'<= 1.000':>8} | {'<= 0.050':>8} | {'':>7}")
+          print("  " + "-" * 73)
+
+          for r in rows:
+              tau   = r.get("kendall_tau")
+              brier = r.get("brier")
+              rps   = r.get("rps")
+              ll    = r.get("logloss")
+              ece   = r.get("ece")
+              n     = r.get("n_races", "?")
+              year  = r.get("val_year", "?")
+
+              tau_s   = f"{tau:+.3f} {status(tau,   0.45, True )}" if tau   is not None else "    n/a"
+              brier_s = f"{brier:.4f} {status(brier, 0.20, False)}" if brier is not None else "   n/a"
+              rps_s   = f"{rps:.4f} {status(rps,   0.15, False)}" if rps   is not None else "   n/a"
+              ll_s    = f"{ll:.4f} {status(ll,    1.00, False)}" if ll    is not None else "   n/a"
+              ece_s   = f"{ece:.4f} {status(ece,   0.05, False)}" if ece   is not None else "   n/a"
+
+              print(f"  {year:>6} | {tau_s:>10} | {brier_s:>8} | {rps_s:>8} | {ll_s:>8} | {ece_s:>8} | {str(n):>7}")
+
+          print("=" * 75)
+
+          # Trend Kendall τ
+          taus = [(r["val_year"], r["kendall_tau"]) for r in rows if r.get("kendall_tau") is not None]
+          if len(taus) >= 2:
+              trend = taus[-1][1] - taus[0][1]
+              print(f"\n  Trend Kendall τ ({taus[0][0]}→{taus[-1][0]}): {trend:+.3f} "
+                    f"({'miglioramento' if trend > 0 else 'peggioramento'})")
+
+          # ── GitHub Step Summary ───────────────────────────────────────
+          summary_file = os.environ.get("GITHUB_STEP_SUMMARY", "/dev/null")
+          with open(summary_file, "w") as f:
+              f.write("## Rolling Window Validation Results\n\n")
+              f.write("| Anno | Kendall τ | Brier | RPS | LogLoss | ECE | N gare |\n")
+              f.write("|------|-----------|-------|-----|---------|-----|--------|\n")
+              for r in rows:
+                  tau   = r.get("kendall_tau")
+                  brier = r.get("brier")
+                  rps   = r.get("rps")
+                  ll    = r.get("logloss")
+                  ece   = r.get("ece")
+                  n     = r.get("n_races", "?")
+                  year  = r.get("val_year", "?")
+
+                  def cell(v, target, hi, dec=4):
+                      if v is None: return "n/a"
+                      ok = v >= target if hi else v <= target
+                      icon = "✅" if ok else "⚠️"
+                      return f"{v:.{dec}f} {icon}"
+
+                  f.write(f"| {year} "
+                          f"| {cell(tau,   0.45, True,  3)} "
+                          f"| {cell(brier, 0.20, False, 4)} "
+                          f"| {cell(rps,   0.15, False, 4)} "
+                          f"| {cell(ll,    1.00, False, 4)} "
+                          f"| {cell(ece,   0.05, False, 4)} "
+                          f"| {n} |\n")
+
+              f.write("\n### Target\n")
+              f.write("| Metrica | Target | Significato |\n")
+              f.write("|---------|--------|-------------|\n")
+              f.write("| Kendall τ | ≥ 0.45 | Ordinamento predetto vs reale |\n")
+              f.write("| Brier | ≤ 0.20 | Calibrazione probabilità |\n")
+              f.write("| RPS | ≤ 0.15 | Ranked Probability Score |\n")
+              f.write("| LogLoss | ≤ 1.00 | Log-loss multiclasse |\n")
+              f.write("| ECE | ≤ 0.05 | Expected Calibration Error |\n")
+
+              if len(taus) >= 2:
+                  trend = taus[-1][1] - taus[0][1]
+                  icon = "📈" if trend > 0 else "📉"
+                  f.write(f"\n**Trend Kendall τ** ({taus[0][0]}→{taus[-1][0]}): "
+                          f"`{trend:+.3f}` {icon}\n")
+
+          print("\nReport scritto su GitHub Step Summary")
+          PYEOF
+
+      - name: Upload aggregated metrics
+        uses: actions/upload-artifact@v4
+        with:
+          name: rolling-validation-summary
+          path: metrics/
+          retention-days: 30
