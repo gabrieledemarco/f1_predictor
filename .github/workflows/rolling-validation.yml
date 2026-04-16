@@ -31,9 +31,9 @@ on:
         required: false
         default: "10000"
       train_from:
-        description: "Primo anno di training (es. 2018)"
+        description: "Primo anno di training — 2022=post-regulation, 2018=full history"
         required: false
-        default: "2018"
+        default: "2022"
 
 jobs:
   # ──────────────────────────────────────────────────────────────────────────
