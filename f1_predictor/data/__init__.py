@@ -109,35 +109,44 @@ def load_training_data_from_mongo(
     """
     race_loader = MongoRaceLoader(db)
     pace_loader = MongoPaceLoader(db)
-    
+
     years_list = list(years)
-    
+
     log.info(f"[DataLoader] Loading {years_list} from MongoDB...")
-    
+
     races = race_loader.load_seasons(years_list, through_round)
-    
+
     if not races:
-        log.warning("[DataLoader] No races found in MongoDB")
+        log.warning("[DataLoader] f1_races: 0 documents for %s — check import-jolpica workflow", years_list)
         return []
-    
-    pace_obs = pace_loader.load_pace_observations(years_list)
-    
+
+    log.info(f"[DataLoader] f1_races: {len(races)} documents for {years_list}")
+
+    n_pace_total = pace_loader.count_observations(years_list)
+    log.info(f"[DataLoader] f1_pace_observations: {n_pace_total} documents for {years_list}")
+    if n_pace_total == 0:
+        log.warning(
+            "[DataLoader] f1_pace_observations is EMPTY — L1b Kalman has no machine pace features. "
+            "Run import-tracinginsights workflow to fix."
+        )
+
     race_dicts = []
     for race in races:
         race_dict = race.to_dict()
-        
+
         race_pace = pace_loader.load_race_pace(race.year, race.round)
         if race_pace:
             race_dict["constructor_pace_observations"] = race_pace
-        
+
         race_dicts.append(race_dict)
-    
+
     enriched_count = sum(1 for r in race_dicts if r.get("constructor_pace_observations"))
     log.info(
-        f"[DataLoader] {len(race_dicts)} races loaded "
-        f"({enriched_count} with pace data)"
+        f"[DataLoader] {len(race_dicts)} races loaded, "
+        f"{enriched_count} enriched with pace data "
+        f"({'OK' if enriched_count > 0 else 'NONE — L1b blind'})"
     )
-    
+
     return race_dicts
 
 

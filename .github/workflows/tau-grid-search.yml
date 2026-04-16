@@ -1,0 +1,326 @@
+name: TTT Tau Grid Search
+
+# Ottimizzazione end-to-end del parametro tau (TTT process noise).
+#
+# Strategia:
+#   Matrix: tau_value × val_year
+#   Per ogni combinazione (tau, anno):
+#     - Allena su 2018..anno-1  (con il tau specificato)
+#     - Valida su anno (stagione completa, dry-run)
+#     - Registra Kendall τ, Brier, RPS, LogLoss, ECE
+#
+#   Job finale: tabella comparativa tau×anno → identifica il tau ottimale
+#   come quello con Kendall τ medio più alto su tutti gli anni di validazione.
+#
+# Utilizzo tipico:
+#   tau_values="0.30,0.50,0.833,1.20,1.50"  val_years="2022,2023,2024"
+#
+# NOTA: usa i dati reali in MongoDB (non sintetici).
+# Prerequisito: secret MONGODB_URI configurato.
+
+on:
+  push:
+    paths:
+      - "trigger/tau-search.txt"
+
+  workflow_dispatch:
+    inputs:
+      tau_values:
+        description: "Tau values da testare (CSV, es. 0.30,0.50,0.833,1.20,1.50)"
+        required: false
+        default: "0.30,0.50,0.833,1.20,1.50"
+      val_years:
+        description: "Anni di validazione (CSV, es. 2022,2023,2024)"
+        required: false
+        default: "2022,2023,2024"
+      n_mc_sim:
+        description: "Simulazioni Monte Carlo per job (ridotto per velocità)"
+        required: false
+        default: "5000"
+      train_from:
+        description: "Primo anno di training (2022 = post-regulation change era)"
+        required: false
+        default: "2022"
+
+jobs:
+  # ──────────────────────────────────────────────────────────────────────────
+  # Genera la matrice tau × anno come JSON
+  # ──────────────────────────────────────────────────────────────────────────
+  setup-matrix:
+    name: "Setup tau × year matrix"
+    runs-on: ubuntu-latest
+    outputs:
+      combinations: ${{ steps.gen.outputs.combinations }}
+
+    steps:
+      - name: Generate combinations JSON
+        id: gen
+        run: |
+          python3 - << 'PYEOF'
+          import json, os
+
+          tau_input = "${{ github.event.inputs.tau_values || '0.30,0.50,0.833,1.20,1.50' }}"
+          year_input = "${{ github.event.inputs.val_years || '2022,2023,2024' }}"
+
+          taus  = [t.strip() for t in tau_input.split(",") if t.strip()]
+          years = [y.strip() for y in year_input.split(",") if y.strip()]
+
+          combos = [{"tau": t, "val_year": y} for t in taus for y in years]
+
+          out = json.dumps(combos)
+          print(f"Combinations ({len(combos)}): {out}")
+
+          with open(os.environ["GITHUB_OUTPUT"], "a") as f:
+              f.write(f"combinations={out}\n")
+          PYEOF
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # Un job per combinazione (tau, anno) — girano tutti in parallelo
+  # ──────────────────────────────────────────────────────────────────────────
+  run-combination:
+    name: "tau=${{ matrix.combo.tau }} | ${{ matrix.combo.val_year }}"
+    runs-on: ubuntu-latest
+    needs: setup-matrix
+    timeout-minutes: 60
+    environment: MONGODB_URI
+
+    strategy:
+      fail-fast: false
+      matrix:
+        combo: ${{ fromJson(needs.setup-matrix.outputs.combinations) }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install scikit-learn scipy numpy pandas pymongo[srv] requests python-dotenv
+
+      - name: Verify MongoDB data availability
+        env:
+          MONGODB_URI: ${{ secrets.MONGODB_URI }}
+        run: |
+          python3 - << 'EOF'
+          import os, sys
+          from pymongo import MongoClient
+
+          uri = os.environ.get("MONGODB_URI", "")
+          if not uri:
+              print("MONGODB_URI not set — cannot verify data")
+              sys.exit(1)
+
+          try:
+              db = MongoClient(uri, serverSelectionTimeoutMS=8000)["betbreaker"]
+
+              # f1_races — required for training
+              n_races = db.f1_races.count_documents({})
+              n_races_2022plus = db.f1_races.count_documents({"year": {"$gte": 2022}})
+              print(f"f1_races total: {n_races}  (2022+: {n_races_2022plus})")
+
+              # f1_pace_observations — needed for L1b Kalman features
+              n_pace = db.f1_pace_observations.count_documents({})
+              n_pace_2022plus = db.f1_pace_observations.count_documents({"year": {"$gte": 2022}})
+              print(f"f1_pace_observations total: {n_pace}  (2022+: {n_pace_2022plus})")
+
+              # jolpica_cache — legacy collection
+              n_jol = db.jolpica_cache.count_documents({})
+              print(f"jolpica_cache total: {n_jol}")
+
+              # Fail fast if no real race data
+              if n_races < 50:
+                  print(f"\nERROR: f1_races has only {n_races} documents (need >= 50).")
+                  print("Run workflow 'Import Jolpica F1 Data' to populate f1_races.")
+                  sys.exit(1)
+
+              if n_pace == 0:
+                  print("\nWARNING: f1_pace_observations is empty.")
+                  print("L1b Kalman filter will train without machine pace features.")
+                  print("Run workflow 'Import TracingInsights Data' to fix this.")
+              else:
+                  print(f"\nOK: f1_races ({n_races}) and f1_pace_observations ({n_pace}) populated.")
+
+          except SystemExit:
+              raise
+          except Exception as e:
+              print(f"MongoDB check failed: {e}")
+              sys.exit(1)
+          EOF
+
+      - name: Run pipeline (tau=${{ matrix.combo.tau }}, val=${{ matrix.combo.val_year }})
+        id: run
+        env:
+          MONGODB_URI: ${{ secrets.MONGODB_URI }}
+          MONGO_URI: ${{ secrets.MONGODB_URI }}
+          THE_ODDS_API_KEY: ${{ secrets.THE_ODDS_API_KEY }}
+        run: |
+          TAU="${{ matrix.combo.tau }}"
+          VAL_YEAR="${{ matrix.combo.val_year }}"
+          TRAIN_FROM="${{ github.event.inputs.train_from || '2018' }}"
+          MC="${{ github.event.inputs.n_mc_sim || '5000' }}"
+
+          echo "=== tau=${TAU} | train=${TRAIN_FROM}..$((VAL_YEAR-1)) | val=${VAL_YEAR} | MC=${MC} ==="
+
+          python train_pipeline.py \
+            --year "$VAL_YEAR" \
+            --through-round 24 \
+            --train-from "$TRAIN_FROM" \
+            --val-from "$VAL_YEAR" \
+            --n-mc-sim "$MC" \
+            --ridge-alpha 10.0 \
+            --ttt-tau "$TAU" \
+            --dry-run \
+            2>&1 | tee "training_tau${TAU}_${VAL_YEAR}.log"
+
+      - name: Extract metrics
+        id: metrics
+        run: |
+          TAU="${{ matrix.combo.tau }}"
+          VAL_YEAR="${{ matrix.combo.val_year }}"
+          LOG="training_tau${TAU}_${VAL_YEAR}.log"
+
+          python3 - << PYEOF
+          import re, json, os
+
+          tau_val  = "$TAU"
+          val_year = "$VAL_YEAR"
+          log_file = f"training_tau{tau_val}_{val_year}.log"
+
+          metrics = {
+              "tau":         tau_val,
+              "val_year":    val_year,
+              "kendall_tau": None,
+              "brier":       None,
+              "logloss":     None,
+              "rps":         None,
+              "ece":         None,
+              "n_races":     None,
+          }
+
+          try:
+              with open(log_file) as f:
+                  content = f.read()
+
+              for line in content.splitlines():
+                  s = line.strip()
+                  if ("Kendall" in s) and ("τ" in s or "tau" in s.lower()):
+                      m = re.search(r"([+-]?\d+\.\d+)", s)
+                      if m: metrics["kendall_tau"] = float(m.group(1))
+                  elif "Brier" in s and "(mc)" in s:
+                      m = re.search(r"(\d+\.\d+)", s)
+                      if m: metrics["brier"] = float(m.group(1))
+                  elif "LogLoss" in s:
+                      m = re.search(r"(\d+\.\d+)", s)
+                      if m: metrics["logloss"] = float(m.group(1))
+                  elif "RPS mean" in s:
+                      m = re.search(r"(\d+\.\d+)", s)
+                      if m: metrics["rps"] = float(m.group(1))
+                  elif "ECE" in s:
+                      m = re.search(r"(\d+\.\d+)", s)
+                      if m: metrics["ece"] = float(m.group(1))
+                  elif "gare valutate" in s:
+                      m = re.search(r"(\d+) gare valutate", s)
+                      if m: metrics["n_races"] = int(m.group(1))
+          except Exception as e:
+              print(f"Errore parsing log: {e}")
+
+          print(json.dumps(metrics, indent=2))
+
+          fname = f"metrics_tau{tau_val}_{val_year}.json"
+          with open(fname, "w") as f:
+              json.dump(metrics, f, indent=2)
+
+          with open(os.environ["GITHUB_OUTPUT"], "a") as f:
+              for k, v in metrics.items():
+                  if v is not None:
+                      f.write(f"{k}={v}\n")
+          PYEOF
+
+      - name: Upload metrics artifact
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: tau-metrics-${{ matrix.combo.tau }}-${{ matrix.combo.val_year }}
+          path: |
+            metrics_tau${{ matrix.combo.tau }}_${{ matrix.combo.val_year }}.json
+            training_tau${{ matrix.combo.tau }}_${{ matrix.combo.val_year }}.log
+          retention-days: 14
+
+  # ──────────────────────────────────────────────────────────────────────────
+  # Aggregazione: analisi avanzata, grafici matplotlib, report committato,
+  # salvataggio MongoDB
+  # ──────────────────────────────────────────────────────────────────────────
+  aggregate-results:
+    name: "Aggregate, Plot & Commit Report"
+    runs-on: ubuntu-latest
+    needs: run-combination
+    if: always()
+    environment: MONGODB_URI
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install analysis dependencies
+        run: pip install matplotlib seaborn numpy pandas pymongo[srv]
+
+      - name: Download all metrics artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: tau-metrics-*
+          merge-multiple: true
+          path: metrics/
+
+      - name: Run analysis — plots + report + MongoDB
+        env:
+          MONGODB_URI: ${{ secrets.MONGODB_URI }}
+          MONGO_URI:   ${{ secrets.MONGODB_URI }}
+          RUN_ID:      ${{ github.run_id }}
+          RUN_URL:     ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          TAU_VALUES:  ${{ github.event.inputs.tau_values || '0.30,0.50,0.833,1.20,1.50' }}
+          VAL_YEARS:   ${{ github.event.inputs.val_years  || '2022,2023,2024' }}
+          N_MC_SIM:    ${{ github.event.inputs.n_mc_sim   || '5000' }}
+        run: python scripts/analyze_tau_results.py --metrics-dir metrics/ --out-dir docs/tau_analysis/
+
+      - name: Write GitHub Step Summary
+        run: |
+          if [ -f docs/tau_analysis/step_summary.md ]; then
+            cat docs/tau_analysis/step_summary.md >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Commit report to repository
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git pull --rebase origin main || true
+          git add docs/tau_analysis/
+          if git diff --cached --quiet; then
+            echo "Nothing to commit"
+          else
+            git commit -m "chore: tau grid search report $(date -u +%Y%m%d_%H%M) [skip ci]"
+            git push origin main
+          fi
+
+      - name: Upload aggregated artifacts
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: tau-grid-search-summary
+          path: |
+            metrics/
+            docs/tau_analysis/
+          retention-days: 30
