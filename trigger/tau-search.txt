@@ -1,1 +1,1 @@
-Re-trigger: train_from=2022 (post-regulation era) 2026-04-16T15:22:23Z
+Re-trigger: diagnostic run — verify f1_races + f1_pace_observations 2026-04-16T16:00:00Z
